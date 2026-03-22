@@ -1,0 +1,53 @@
+/* tldraw CSS variable overrides — maps Grain design tokens to tldraw internals.
+ * Reference: grain-prd.md Section 5.1, 5.7, 10
+ */
+
+.grain-canvas-wrapper {
+  width: 100%;
+  height: 100%;
+}
+
+/* Override tldraw's background and selection colors */
+.grain-canvas-wrapper .tl-container {
+  --tl-color-background: var(--color-bg);
+  --tl-color-selection-stroke: var(--color-accent);
+  --tl-color-selection-fill: rgba(107, 127, 110, 0.08);
+  --tl-color-brush-fill: rgba(107, 127, 110, 0.05);
+  --tl-color-brush-stroke: rgba(107, 127, 110, 0.25);
+
+  /* Map tldraw fonts to Grain's font family */
+  --tl-font-sans: var(--font-family);
+}
+
+/* Style tldraw's default UI chrome to match Grain */
+.grain-canvas-wrapper .tlui-layout {
+  font-family: var(--font-family);
+  color: var(--color-text);
+}
+
+/* Toolbar and panel styling */
+.grain-canvas-wrapper .tlui-toolbar,
+.grain-canvas-wrapper .tlui-style-panel,
+.grain-canvas-wrapper .tlui-menu {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-toolbar);
+}
+
+/* Button hover states within tldraw UI */
+.grain-canvas-wrapper .tlui-button:hover {
+  background: var(--color-bg);
+}
+
+/* Active tool indicator */
+.grain-canvas-wrapper .tlui-button[data-state="selected"],
+.grain-canvas-wrapper .tlui-button[aria-pressed="true"] {
+  color: var(--color-accent);
+  background: var(--color-bg);
+}
+
+/* Sticky note override — use Grain surface color instead of tldraw yellow */
+.grain-canvas-wrapper .tl-note-container {
+  --tl-note-color: var(--color-surface);
+}
