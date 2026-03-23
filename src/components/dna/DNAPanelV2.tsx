@@ -22,7 +22,7 @@ import { ExportView } from './ExportView'
 type PanelState = 'idle' | 'needs_medium' | 'extracting' | 'ready' | 'error'
 
 interface DNAPanelV2Props {
-  boardName: string | null
+  boardName: string
   canvasId: string
   onClose: () => void
 }
@@ -48,9 +48,6 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
 
   // Fetch board data when boardName changes to a DIFFERENT board
   useEffect(() => {
-    // Panel hidden — don't reset state, just return
-    if (!boardName) return
-
     // Same board — skip fetch, keep existing state
     if (boardName === loadedBoardName) return
 
