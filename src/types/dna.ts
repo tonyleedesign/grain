@@ -1,36 +1,123 @@
-// Design DNA types — the structured output from Claude's image analysis.
+// Design DNA types — medium-aware, structured for both designer validation and AI export.
 // Reference: grain-prd.md Section 5.3, 14
 
-export interface BoardDNA {
-  board_name: string
-  core_patterns: string[]
-  color_palette: {
-    description: string
-    hex_values: string[]
-  }
-  mood_tags: string[]
-  style_tags: string[]
-  material_tags: string[]
-  composition: string
-  era_reference: string
-  overall_feel: string
-  what_makes_distinct: string
-  typography_direction: string
-  font_pairing: {
-    display: string
-    body: string
-    reasoning: string
-  }
+// --- Mediums ---
+// Extensible to 'brand' | 'motion' | 'social' later
+export type Medium = 'web' | 'image'
+
+// --- Shared primitives ---
+
+export interface AntiPattern {
+  this_is: string
+  not_that: string
 }
+
+export interface PatternEvidence {
+  image_index: number
+  quality: string       // 2-4 words, e.g. "warm amber tones"
+  region_hint: string   // e.g. "center", "top-left", "background"
+  conflict?: string     // optional: what this image disagrees on, e.g. "warmer palette than others"
+}
+
+// --- Web/App DNA ---
+
+export interface WebAppDNA {
+  board_name: string
+  color_palette: {
+    colors: Array<{ hex: string; role: string }>  // 5 semantic colors
+    overlays: Array<{ rgba: string; use: string }> // transparent layers: scrims, tints, color grades
+    relationship: string                           // 4 words max
+  }
+  typography: {
+    display: { family: string; weight: number; classification: string }
+    body: { family: string; weight: number; classification: string }
+  }
+  border_radius: number                            // 0-24px
+  spacing_density: 'compact' | 'comfortable' | 'spacious'
+  shadow_style: 'none' | 'subtle' | 'layered' | 'elevated'
+  texture: {
+    background: string[]                           // e.g. ["noise overlay", "gradient mesh", "grain"]
+    finish: 'matte' | 'glossy' | 'frosted' | 'raw'
+    light_behavior: 'absorptive' | 'reflective' | 'mixed'  // how surfaces respond to light
+    shadow_crush: 'none' | 'moderate' | 'heavy'             // how much shadow detail is preserved
+  }
+  motion: {
+    level: 'static' | 'subtle' | 'expressive' | 'immersive'
+    techniques: string[]                           // e.g. ["scroll-triggered reveals", "parallax layers"]
+    approach: 'css-only' | 'framer-motion' | 'gsap' | 'webgl/three.js'
+  }
+  image_treatment: {
+    role: 'hero-driven' | 'supporting' | 'decorative' | 'minimal'
+    treatment: string[]                            // e.g. ["duotone", "grain overlay", "desaturated"]
+    placement: string[]                            // e.g. ["full-bleed", "overlapping text", "contained in cards"]
+    text_overlay: 'dark-scrim' | 'gradient-fade' | 'clear-space' | 'knockout' | 'none'
+  }
+  project_instructions: {
+    project_summary: string                          // AI-interpreted version of use case, 1 sentence, no typos
+    sections: string[]                               // 4-6 pages/sections with one-line descriptions
+    content_tone: string[]                           // 3-4 writing style directives
+    standout_tips: string[]                          // 2-3 tips specific to this project type
+  }
+  anti_patterns: AntiPattern[]                     // 3 pairs
+  mood_tags: string[]                              // 3-5 single words
+  direction_summary: string                        // max 15 words
+  evidence: PatternEvidence[]                      // 3-5 items
+}
+
+// --- Image Gen DNA ---
+
+export interface ImageGenDNA {
+  board_name: string
+  color_palette: {
+    colors: string[]   // 5 hex values
+    mood: string
+  }
+  medium_type: {
+    primary: 'photography' | 'illustration' | '3d' | 'mixed'
+    sub_tags: string[]
+  }
+  lighting: string[]
+  texture: {
+    level: 'clean' | 'light' | 'moderate' | 'heavy'
+    keywords: string[]
+  }
+  composition: {
+    style: string
+    description: string
+  }
+  era_movement: string[]
+  anti_patterns: AntiPattern[]
+  mood_tags: string[]
+  direction_summary: string
+  evidence: PatternEvidence[]
+}
+
+// --- Discriminated union ---
+
+export type BoardDNA =
+  | { medium: 'web'; dna: WebAppDNA }
+  | { medium: 'image'; dna: ImageGenDNA }
+
+// --- Organize result (grouping only, no DNA) ---
 
 export interface OrganizeResult {
   boards: {
-    dna: BoardDNA
+    board_name: string
     image_ids: string[]
   }[]
 }
 
-// Image reference passed to the organize API
+// --- Feedback loop ---
+
+export interface DNAFeedback {
+  board_id: string
+  rating: 'worked' | 'needs_tweaking'
+  what_was_off?: string
+  created_at: string
+}
+
+// --- Image reference passed to the organize API (unchanged) ---
+
 export interface CanvasImage {
   id: string
   url: string

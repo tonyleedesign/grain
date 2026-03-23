@@ -47,6 +47,18 @@
   background: var(--color-bg);
 }
 
+/* DNA panel — override tldraw's global user-select: none on .tl-container * */
+.grain-dna-panel,
+.grain-dna-panel * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+.grain-dna-panel button,
+.grain-dna-panel [role="tablist"] {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
 /* Sticky note override — use Grain surface color instead of tldraw yellow */
 .grain-canvas-wrapper .tl-note-container {
   --tl-note-color: var(--color-surface);

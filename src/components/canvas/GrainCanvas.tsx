@@ -10,6 +10,7 @@ import 'tldraw/tldraw.css'
 import './grain-canvas.css'
 import { uploadImages } from '@/lib/uploadImages'
 import { CanvasUI } from './CanvasUI'
+import { SnapshotCardShapeUtil } from './SnapshotCardShape'
 
 interface GrainCanvasProps {
   canvasType: 'community' | 'private'
@@ -18,6 +19,8 @@ interface GrainCanvasProps {
 }
 
 export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasProps) {
+  const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil], [])
+
   const components = useMemo<TLComponents>(
     () => ({
       // We'll override these incrementally as we build:
@@ -45,8 +48,10 @@ export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasPro
   return (
     <div className="grain-canvas-wrapper">
       <Tldraw
+        shapeUtils={customShapeUtils}
         components={components}
         assets={assets}
+        maxAssetSize={50 * 1024 * 1024}
         inferDarkMode={false}
         persistenceKey={`grain-${canvasType}-${canvasId}`}
       >
