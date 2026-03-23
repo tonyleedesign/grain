@@ -8,11 +8,16 @@
 // Reference: grain-prd.md Section 5.3
 
 import { Editor, TLImageShape, TLShapeId, createShapeId } from 'tldraw'
-import { CanvasImage, OrganizeResult } from '@/types/dna'
+import { CanvasImage } from '@/types/dna'
+
+interface OrganizeAPIResult {
+  boards: { board_name: string; image_ids: string[] }[]
+}
 
 const BOARD_PADDING = 24
 const IMAGE_GAP = 12
-const IMAGES_PER_ROW = 3
+const ROW_HEIGHT = 250
+const MAX_ROW_WIDTH = 900
 
 export function getUngroupedImages(editor: Editor): TLImageShape[] {
   // Get all image shapes that are NOT inside a frame (ungrouped)
@@ -29,7 +34,7 @@ export function getUngroupedImages(editor: Editor): TLImageShape[] {
 export async function organizeImages(
   editor: Editor,
   canvasId: string
-): Promise<OrganizeResult | null> {
+): Promise<OrganizeAPIResult | null> {
   const ungrouped = getUngroupedImages(editor)
 
   if (ungrouped.length === 0) return null
@@ -60,7 +65,7 @@ export async function organizeImages(
     throw new Error(error.error || 'Organize failed')
   }
 
-  const result: OrganizeResult = await response.json()
+  const result: OrganizeAPIResult = await response.json()
 
   // Create frames and group images on the canvas
   editor.run(() => {
@@ -78,14 +83,39 @@ export async function organizeImages(
       const avgY =
         boardImages.reduce((sum, img) => sum + img.y, 0) / boardImages.length
 
-      // Calculate frame size based on image count
-      const cols = Math.min(boardImages.length, IMAGES_PER_ROW)
-      const rows = Math.ceil(boardImages.length / IMAGES_PER_ROW)
-      const imgW = 200
-      const imgH = 200
-      const frameW = cols * imgW + (cols - 1) * IMAGE_GAP + BOARD_PADDING * 2
-      const frameH =
-        rows * imgH + (rows - 1) * IMAGE_GAP + BOARD_PADDING * 2 + 40 // +40 for header
+      // Scale images to consistent row height, preserving aspect ratios
+      const scaled = boardImages.map((img) => {
+        const aspect = img.props.w / (img.props.h || 1)
+        const w = Math.round(ROW_HEIGHT * aspect)
+        return { img, w, h: ROW_HEIGHT }
+      })
+
+      // Pack into rows that don't exceed MAX_ROW_WIDTH
+      const imageRows: typeof scaled[] = []
+      let currentRow: typeof scaled = []
+      let currentRowWidth = 0
+
+      for (const item of scaled) {
+        const itemTotalWidth = currentRow.length > 0 ? IMAGE_GAP + item.w : item.w
+        if (currentRowWidth + itemTotalWidth > MAX_ROW_WIDTH && currentRow.length > 0) {
+          imageRows.push(currentRow)
+          currentRow = [item]
+          currentRowWidth = item.w
+        } else {
+          currentRow.push(item)
+          currentRowWidth += itemTotalWidth
+        }
+      }
+      if (currentRow.length > 0) imageRows.push(currentRow)
+
+      // Calculate frame size from packed rows
+      const rowWidths = imageRows.map((row) =>
+        row.reduce((sum, item) => sum + item.w, 0) + (row.length - 1) * IMAGE_GAP
+      )
+      const maxRowWidth = Math.max(...rowWidths)
+      const totalHeight = imageRows.length * ROW_HEIGHT + (imageRows.length - 1) * IMAGE_GAP
+      const frameW = maxRowWidth + BOARD_PADDING * 2
+      const frameH = totalHeight + BOARD_PADDING * 2 + 40
 
       // Create the frame (board container)
       const frameId = createShapeId()
@@ -97,30 +127,31 @@ export async function organizeImages(
         props: {
           w: frameW,
           h: frameH,
-          name: board.dna.board_name,
+          name: board.board_name,
         },
       })
 
-      // Move and arrange images inside the frame
-      boardImages.forEach((img, index) => {
-        const col = index % IMAGES_PER_ROW
-        const row = Math.floor(index / IMAGES_PER_ROW)
-        const x = BOARD_PADDING + col * (imgW + IMAGE_GAP)
-        const y = BOARD_PADDING + 40 + row * (imgH + IMAGE_GAP) // +40 for header
-
-        editor.updateShape({
-          id: img.id as TLShapeId,
-          type: 'image',
-          parentId: frameId,
-          x,
-          y,
-          props: {
-            ...img.props,
-            w: imgW,
-            h: imgH,
-          },
-        })
-      })
+      // Place each image at its calculated position
+      let rowY = BOARD_PADDING + 40
+      for (const row of imageRows) {
+        let x = BOARD_PADDING
+        for (const item of row) {
+          editor.updateShape({
+            id: item.img.id as TLShapeId,
+            type: 'image',
+            parentId: frameId,
+            x,
+            y: rowY,
+            props: {
+              ...item.img.props,
+              w: item.w,
+              h: item.h,
+            },
+          })
+          x += item.w + IMAGE_GAP
+        }
+        rowY += ROW_HEIGHT + IMAGE_GAP
+      }
     }
   })
 

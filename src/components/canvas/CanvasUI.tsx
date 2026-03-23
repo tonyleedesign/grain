@@ -7,7 +7,8 @@
 import { useState, useEffect } from 'react'
 import { useEditor, useValue } from 'tldraw'
 import { OrganizeButton } from './OrganizeButton'
-import { DNAPanel } from '../dna/DNAPanel'
+import { SelectionActionBar } from './SelectionActionBar'
+import { DNAPanelV2 } from '../dna/DNAPanelV2'
 
 interface CanvasUIProps {
   canvasId: string
@@ -34,13 +35,17 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
         return
       }
     }
-    // Don't auto-close when selecting other things — let user close manually
+    // Nothing selected (clicked empty canvas) — close the panel
+    if (selectedShapes.length === 0) {
+      setActiveBoardName(null)
+    }
   }, [selectedShapes])
 
   return (
     <>
       <OrganizeButton canvasId={canvasId} />
-      <DNAPanel
+      <SelectionActionBar canvasId={canvasId} />
+      <DNAPanelV2
         boardName={activeBoardName}
         canvasId={canvasId}
         onClose={() => setActiveBoardName(null)}

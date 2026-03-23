@@ -1,4 +1,5 @@
-// Fetch board DNA by board name and canvas ID.
+// Board CRUD — fetch and create boards.
+// Uses supabaseServer (service role) to bypass RLS for anonymous users.
 // Reference: grain-prd.md Section 11.3
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -26,5 +27,32 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Board not found' }, { status: 404 })
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json({
+    ...data,
+    needs_extraction: !data.dna_data,
+  })
+}
+
+export async function POST(request: NextRequest) {
+  const { name, canvasId } = (await request.json()) as {
+    name: string
+    canvasId: string
+  }
+
+  if (!name || !canvasId) {
+    return NextResponse.json({ error: 'name and canvasId required' }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseServer
+    .from('boards')
+    .insert({ canvas_id: canvasId, name })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error('Board create error:', error)
+    return NextResponse.json({ error: 'Failed to create board' }, { status: 500 })
+  }
+
+  return NextResponse.json({ id: data.id })
 }
