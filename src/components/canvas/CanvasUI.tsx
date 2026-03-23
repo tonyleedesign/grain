@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react'
 import { useEditor, useValue } from 'tldraw'
+import { AnimatePresence } from 'framer-motion'
 import { OrganizeButton } from './OrganizeButton'
 import { SelectionActionBar } from './SelectionActionBar'
 import { DNAPanelV2 } from '../dna/DNAPanelV2'
@@ -45,11 +46,15 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
     <>
       <OrganizeButton canvasId={canvasId} />
       <SelectionActionBar canvasId={canvasId} />
-      <DNAPanelV2
-        boardName={activeBoardName}
-        canvasId={canvasId}
-        onClose={() => setActiveBoardName(null)}
-      />
+      <AnimatePresence>
+        {activeBoardName && (
+          <DNAPanelV2
+            boardName={activeBoardName}
+            canvasId={canvasId}
+            onClose={() => setActiveBoardName(null)}
+          />
+        )}
+      </AnimatePresence>
     </>
   )
 }
