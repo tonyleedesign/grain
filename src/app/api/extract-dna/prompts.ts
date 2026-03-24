@@ -32,6 +32,7 @@ const QUALITY_GATES = `Quality gates — every output must pass these:
 - Direction summary needs contrast and positioning. Good: "Restrained editorial warmth — not corporate, not playful." Bad: "Modern and clean design."
 - Colors must have a clear dominant/accent hierarchy. 5 equally weighted colors = failure.
 - Typography: match the letterform characteristics described in the observations (weight, width, contrast, terminals) to a Google Font with those specific characteristics. Use classification to narrow: geometric-sans, humanist-sans, neo-grotesque, transitional-serif, didone, slab, display, mono. If the observations don't describe visible typography, choose fonts that match the overall mood and axis commitments.
+- Texture must identify a PRIMARY source of character. Do not default to blur, frosted glass, grain overlays, or atmospheric haze as generic shorthand for mood.
 - Mood tags must be evocative and specific. Good: "visceral", "weathered", "nocturnal". Bad: "modern", "clean", "professional".
 - If any field could apply to 100 different projects, rewrite it until it could only apply to THIS one.`
 
@@ -62,7 +63,7 @@ Organic ↔ Geometric governs:
 
 Saturated ↔ Muted governs:
 - Color saturation: vivid full-saturation palette vs desaturated/tonal palette. This must be visible in your hex values.
-- Image treatment: high-contrast/color-graded = saturated; desaturated/soft-focus = muted.
+- Image treatment: high-contrast/color-graded = saturated; desaturated/tonal restraint = muted. Muted does NOT automatically mean blurry.
 
 Image-Led ↔ Interface-Led governs:
 - IMPORTANT: do NOT confuse "reference images contain photos" with "the design is image-led." A portfolio site showing work in a grid of cards is INTERFACE-LED — the images are content, not design. Image-led means images drive the LAYOUT: full-bleed heroes, photography as background, images breaking the grid. Ask: "does the layout serve the images, or do images sit inside the layout?" If images are contained in cards/grids, that's interface-led.
@@ -263,7 +264,7 @@ Rules:
 - overlays: 2-4 transparent layers as rgba values for scrims, tints, color grades.
 - Typography: choose from the FONT CANDIDATES list below. Pick the font whose classification and expressive traits best match the observations and your axis commitments. If no letterforms were described in observations, choose fonts that match the overall mood. Do NOT pick fonts outside this list.
 - border_radius: single number 0-24. 0=brutalist, 4-6=sharp professional, 8-12=balanced, 16+=friendly rounded
-- texture: derive from surface descriptions in the observations.
+- texture: derive from surface descriptions in the observations. Name the main texture strategy, not a pile of atmospheric effects. Do not default to blur, frosted glass, grain overlays, or haze unless the observations explicitly support them.
 - motion: infer from the design style and energy level described. Motion level must match approach: static/subtle = css-only or framer-motion, expressive = gsap, immersive = webgl/three.js. Do not pair subtle motion with gsap.
 - project_instructions: if observations describe layout patterns, use them. Otherwise recommend for the project type.
 - Exactly 3 anti_patterns with concrete visual boundaries. Anti-patterns must describe reusable visual direction, not the literal subject matter of a specific reference image. Prefer the design quality an image implies ("lifestyle softness", "friendly warmth", "polished luxury sheen") over the exact depicted pose, object, or scene, unless the medium is image generation and subject matter is structurally important.
@@ -391,3 +392,4 @@ export function buildWebAppPrompt(imageCount: number, useCase?: string, sourceCo
 export function buildImageGenPrompt(imageCount: number, useCase?: string, sourceContext?: string): string {
   return buildImageGenSynthesizePrompt('(no observations — legacy single-pass mode)', imageCount, useCase, sourceContext)
 }
+

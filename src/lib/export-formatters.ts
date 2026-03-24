@@ -117,7 +117,7 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
     const finishGuide: Record<string, string> = {
       'matte': 'Flat, non-reflective surfaces. No glossy effects, no glass-morphism. Think paper, concrete, chalk.',
       'glossy': 'Reflective, polished surfaces. Glass-morphism, sheen effects, and high-contrast highlights are appropriate.',
-      'frosted': 'Semi-transparent, blurred surfaces. Use backdrop-blur, frosted glass cards, and translucent overlays.',
+      'frosted': 'Softly diffused, semi-transparent surfaces. Achieve separation through tonal layering and translucency before reaching for heavy blur.',
       'raw': 'Unpolished, textured surfaces. Embrace imperfection — visible grain, rough edges, analog feel.',
     }
     sections.push(finishGuide[dna.texture.finish] || `Finish: ${dna.texture.finish}`)
@@ -316,3 +316,5 @@ export function formatForMidjourney(dna: ImageGenDNA, useCase?: string): string 
 
   return prompt
 }
+
+
