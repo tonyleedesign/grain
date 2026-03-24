@@ -4,8 +4,8 @@
 // States: idle → needs_medium → extracting → ready → error
 // Reference: grain-prd.md Section 11.3
 
-import { useState, useEffect, useCallback } from 'react'
-import { useEditor, createShapeId, TLShapeId } from 'tldraw'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useEditor, createShapeId } from 'tldraw'
 import { motion } from 'framer-motion'
 import { X, GripVertical, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -40,12 +40,42 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
   const [activeTab, setActiveTab] = useState('designer')
   const [sourceContext, setSourceContext] = useState<string>('')
   const [appealContext, setAppealContext] = useState<string>('')
+  const [observations, setObservations] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [themeApplied, setThemeApplied] = useState(false)
   const [showRegenPrompt, setShowRegenPrompt] = useState(false)
   const [regenReason, setRegenReason] = useState('')
   // Track which board we last loaded to avoid redundant fetches
   const [loadedBoardName, setLoadedBoardName] = useState<string | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Intercept clipboard and keyboard events at the native DOM level to prevent
+  // tldraw's document-level listeners from capturing copy/paste inside the panel.
+  useEffect(() => {
+    const el = panelRef.current
+    if (!el) return
+
+    const stopNative = (e: Event) => e.stopPropagation()
+    const stopKeyboard = (e: KeyboardEvent) => {
+      // Let all keyboard events inside the panel stay in the panel
+      // This prevents tldraw from intercepting Ctrl+C/V/X and other shortcuts
+      e.stopPropagation()
+    }
+
+    el.addEventListener('copy', stopNative, true)
+    el.addEventListener('cut', stopNative, true)
+    el.addEventListener('paste', stopNative, true)
+    el.addEventListener('keydown', stopKeyboard, true)
+    el.addEventListener('keyup', stopKeyboard, true)
+
+    return () => {
+      el.removeEventListener('copy', stopNative, true)
+      el.removeEventListener('cut', stopNative, true)
+      el.removeEventListener('paste', stopNative, true)
+      el.removeEventListener('keydown', stopKeyboard, true)
+      el.removeEventListener('keyup', stopKeyboard, true)
+    }
+  }, [])
 
   // Fetch board data when boardName changes to a DIFFERENT board
   useEffect(() => {
@@ -72,7 +102,10 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         } else {
           setMedium(data.medium)
           setUseCase(data.use_case || '')
+          setSourceContext(data.source_context || '')
+          setAppealContext(data.appeal_context || '')
           setDna(data.dna_data)
+          setObservations(data.observations || null)
           setState('ready')
         }
 
@@ -116,7 +149,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
             imageUrls,
             feedback: feedback || undefined,
           }),
-          signal: AbortSignal.timeout(60000),
+          signal: AbortSignal.timeout(120000),
         })
 
         if (!response.ok) {
@@ -126,6 +159,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
 
         const result = await response.json()
         setDna(result.dna)
+        setObservations(result.observations || null)
         setState('ready')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Extraction failed')
@@ -157,10 +191,11 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         sourceContext: sourceContext || undefined,
         appealContext: appealContext || undefined,
         imageUrls,
+        observations: observations || undefined,
         feedback: feedbackText,
         previousDna: feedbackText ? dna : undefined,
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(120000),
     })
       .then((res) => {
         if (!res.ok) return res.json().then((err) => { throw new Error(err.error || 'Extraction failed') })
@@ -168,6 +203,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       })
       .then((result) => {
         setDna(result.dna)
+        setObservations(result.observations || null)
         if (reason) setFeedback(reason)
         setState('ready')
       })
@@ -175,7 +211,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         setError(err instanceof Error ? err.message : 'Extraction failed')
         setState('error')
       })
-  }, [medium, boardName, canvasId, useCase, sourceContext, appealContext, imageUrls, feedback])
+  }, [medium, boardName, canvasId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna])
 
   const handleDetach = useCallback(() => {
     if (!dna || !medium || !boardName) return
@@ -223,6 +259,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
 
   return (
     <motion.div
+      ref={panelRef}
       key="dna-panel"
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
@@ -236,13 +273,10 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         fontFamily: 'var(--font-family)',
         color: 'var(--color-text)',
       }}
-      // Prevent events from reaching tldraw canvas
+      // Prevent pointer events from reaching tldraw canvas
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
       onPointerMove={(e) => e.stopPropagation()}
-      onCopy={(e) => e.stopPropagation()}
-      onCut={(e) => e.stopPropagation()}
-      onPaste={(e) => e.stopPropagation()}
     >
       {/* Header */}
       <div
@@ -301,8 +335,8 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
                 Extracting Design DNA...
               </p>
               <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                Analyzing {imageUrls.length} image{imageUrls.length !== 1 ? 's' : ''} with Claude Sonnet.
-                This usually takes 10-20 seconds.
+                Observing {imageUrls.length} image{imageUrls.length !== 1 ? 's' : ''}, then synthesizing DNA.
+                This usually takes 20-30 seconds.
               </p>
             </div>
           </div>

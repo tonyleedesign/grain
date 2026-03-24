@@ -1,6 +1,7 @@
 'use client'
 
 import { ImageGenDNA } from '@/types/dna'
+import { ReasoningField } from '../fields/ReasoningField'
 import { ColorPaletteField } from '../fields/ColorPaletteField'
 import { MediumTypeField } from '../fields/MediumTypeField'
 import { LightingField } from '../fields/LightingField'
@@ -23,6 +24,9 @@ interface ImageGenDesignerViewProps {
 export function ImageGenDesignerView({ dna, imageUrls }: ImageGenDesignerViewProps) {
   return (
     <div className="flex flex-col">
+      {/* AI Reasoning — collapsed by default */}
+      {dna.reasoning && <ReasoningField reasoning={dna.reasoning} />}
+
       {/* Direction summary */}
       <p className="text-[13px] italic leading-snug" style={{ color: 'var(--color-text)' }}>
         {dna.direction_summary}
