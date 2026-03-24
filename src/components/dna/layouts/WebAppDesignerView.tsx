@@ -1,6 +1,7 @@
 'use client'
 
 import { WebAppDNA } from '@/types/dna'
+import { ReasoningField } from '../fields/ReasoningField'
 import { ColorPaletteField } from '../fields/ColorPaletteField'
 import { TypographyField } from '../fields/TypographyField'
 import { BorderRadiusField } from '../fields/BorderRadiusField'
@@ -25,6 +26,9 @@ interface WebAppDesignerViewProps {
 export function WebAppDesignerView({ dna, imageUrls }: WebAppDesignerViewProps) {
   return (
     <div className="flex flex-col">
+      {/* AI Reasoning — collapsed by default */}
+      {dna.reasoning && <ReasoningField reasoning={dna.reasoning} />}
+
       {/* Direction summary */}
       <p className="text-[13px] italic leading-snug" style={{ color: 'var(--color-text)' }}>
         {dna.direction_summary}

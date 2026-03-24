@@ -12,7 +12,7 @@ const MEDIUMS: { id: Medium; label: string; icon: typeof Monitor; description: s
 ]
 
 interface MediumPickerProps {
-  onSubmit: (medium: Medium, useCase: string, sourceContext?: string) => void
+  onSubmit: (medium: Medium, useCase: string, sourceContext?: string, appealContext?: string) => void
   imageCount: number
 }
 
@@ -20,6 +20,7 @@ export function MediumPicker({ onSubmit, imageCount }: MediumPickerProps) {
   const [selected, setSelected] = useState<Medium | null>(null)
   const [useCase, setUseCase] = useState('')
   const [sourceContext, setSourceContext] = useState('')
+  const [appealContext, setAppealContext] = useState('')
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -100,9 +101,31 @@ export function MediumPicker({ onSubmit, imageCount }: MediumPickerProps) {
         />
       </div>
 
+      <div>
+        <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
+          What draws you to these?
+        </label>
+        <p className="text-[10px] mb-1.5" style={{ color: 'var(--color-muted)' }}>
+          Tell us what you like — the mood, colors, texture, composition, feeling. Helps the AI focus on what matters to you.
+        </p>
+        <textarea
+          value={appealContext}
+          onChange={(e) => setAppealContext(e.target.value)}
+          placeholder="e.g. the motion blur and neon glow, the moody urban atmosphere, the cinematic framing"
+          rows={2}
+          className="w-full text-[13px] p-2 resize-none rounded-md"
+          style={{
+            border: '1px solid var(--color-border)',
+            backgroundColor: 'var(--color-surface)',
+            color: 'var(--color-text)',
+            fontFamily: 'var(--font-family)',
+          }}
+        />
+      </div>
+
       <button
         disabled={!selected || !useCase.trim()}
-        onClick={() => selected && onSubmit(selected, useCase, sourceContext.trim() || undefined)}
+        onClick={() => selected && onSubmit(selected, useCase, sourceContext.trim() || undefined, appealContext.trim() || undefined)}
         className="w-full py-2.5 text-[13px] font-medium rounded-md cursor-pointer transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
         style={{
           backgroundColor: 'var(--color-accent)',

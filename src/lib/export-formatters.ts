@@ -4,30 +4,12 @@
 
 import type { WebAppDNA, ImageGenDNA, Medium } from '@/types/dna'
 
-// ─── Hardcoded best practices (Level 3: Creative Direction) ───
-// These prevent distributional convergence regardless of extracted DNA.
-// Sourced from Anthropic's frontend-design SKILL.md + research synthesis.
-
-const WEB_ANTI_SLOP = `## What NOT to Do
-- NEVER use Inter, Roboto, Open Sans, or system-default fonts — these signal "AI-generated"
-- NEVER use purple-to-blue gradients on white backgrounds
-- NEVER use three equal-width cards in a row — break the pattern
-- NEVER use light gray (#f5f5f5) backgrounds with thin gray borders — this is the default AI look
-- NEVER center everything — use asymmetry, offset grids, diagonal flow`
+// ─── Implementation guidance ───
 
 const WEB_IMPLEMENTATION = `## Implementation Rules
 - Use CSS custom properties for all values — no hardcoded colors or sizes in components
 - Typography: pair a distinctive display face with a readable body face — never use the same font for both
-- Grid-breaking: let one element overlap, bleed, or break the grid per section
 - Match complexity to vision — a brutalist site needs different code patterns than a luxury one`
-
-const IMAGE_GEN_ANTI_SLOP = `## What NOT to Do
-- NEVER use camera settings like "f/1.4" or "ISO 400" — use descriptive terms instead
-- NEVER list contradictory styles (e.g. "minimalist maximalist")
-- NEVER use "cinematic" without specifying what kind — it's meaningless alone
-- NEVER use "8k, ultra-detailed, masterpiece" — these are noise words that dilute actual direction
-- NEVER combine incompatible lighting (e.g. "soft light, harsh shadows")
-- NEVER use "trending on ArtStation" or platform-specific quality markers`
 
 const IMAGE_GEN_IMPLEMENTATION = `## Prompt Construction Rules
 - Lead with medium and technique, not subject matter
@@ -70,7 +52,6 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   sections.push(`**Palette relationship:** ${dna.color_palette.relationship}`)
   sections.push(`**Spatial feel:** ${dna.spacing_density} density, ${dna.shadow_style} shadows, ${dna.border_radius}px radius`)
   sections.push('')
-  sections.push(`Ask yourself before every component: does this reinforce "${dna.direction_summary}" or dilute it?`)
   sections.push('')
 
   // Anti-patterns from DNA (personalized)
@@ -93,10 +74,9 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   if (dna.color_palette.overlays?.length) {
     sections.push('')
     sections.push('  /* Overlays & transparent layers */')
-    for (const overlay of dna.color_palette.overlays) {
-      const varName = overlay.use.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '')
-      sections.push(`  --overlay-${varName}: ${overlay.rgba};`)
-    }
+    dna.color_palette.overlays.forEach((overlay, i) => {
+      sections.push(`  --overlay-${i + 1}: ${overlay.rgba}; /* ${overlay.use} */`)
+    })
   }
   sections.push('}')
   sections.push('```')
@@ -114,8 +94,8 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   sections.push('')
   sections.push('```css')
   sections.push(':root {')
-  sections.push(`  --font-display: '${dna.typography.display.family}', ${dna.typography.display.classification === 'serif' ? 'serif' : 'sans-serif'};`)
-  sections.push(`  --font-body: '${dna.typography.body.family}', ${dna.typography.body.classification === 'serif' ? 'serif' : 'sans-serif'};`)
+  sections.push(`  --font-display: '${dna.typography.display.family}', ${/serif/i.test(dna.typography.display.classification) ? 'serif' : dna.typography.display.classification === 'mono' ? 'monospace' : 'sans-serif'};`)
+  sections.push(`  --font-body: '${dna.typography.body.family}', ${/serif/i.test(dna.typography.body.classification) ? 'serif' : dna.typography.body.classification === 'mono' ? 'monospace' : 'sans-serif'};`)
   sections.push(`  --font-weight-display: ${dna.typography.display.weight};`)
   sections.push(`  --font-weight-body: ${dna.typography.body.weight};`)
   sections.push('}')
@@ -233,9 +213,6 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
     }
   }
 
-  // Hardcoded anti-slop (Level 3)
-  sections.push(WEB_ANTI_SLOP)
-  sections.push('')
   sections.push(WEB_IMPLEMENTATION)
 
   return sections.join('\n')
@@ -295,9 +272,6 @@ function formatImageGenSkill(dna: ImageGenDNA, useCase?: string): string {
   }
   sections.push('')
 
-  // Hardcoded anti-slop
-  sections.push(IMAGE_GEN_ANTI_SLOP)
-  sections.push('')
   sections.push(IMAGE_GEN_IMPLEMENTATION)
 
   return sections.join('\n')

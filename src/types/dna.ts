@@ -7,6 +7,17 @@ export type Medium = 'web' | 'image'
 
 // --- Shared primitives ---
 
+export interface DNAReasoning {
+  // --- Observation layer (what was seen) ---
+  per_image: string[]        // What was seen in each image — literal, not interpreted
+  repeated_signals: string   // What visual patterns appeared across multiple images
+  tensions: string           // Where images disagreed or pulled in different directions
+
+  // --- Conclusion layer (what was decided) ---
+  synthesis: string          // How tensions were resolved, what was amplified/deprioritized
+  archetype_check: string    // Nearest archetype + specifically how THIS collection differs
+}
+
 export interface AntiPattern {
   this_is: string
   not_that: string
@@ -62,6 +73,7 @@ export interface WebAppDNA {
   mood_tags: string[]                              // 3-5 single words
   direction_summary: string                        // max 15 words
   evidence: PatternEvidence[]                      // 3-5 items
+  reasoning?: DNAReasoning                         // Two-pass reasoning trace
 }
 
 // --- Image Gen DNA ---
@@ -90,6 +102,7 @@ export interface ImageGenDNA {
   mood_tags: string[]
   direction_summary: string
   evidence: PatternEvidence[]
+  reasoning?: DNAReasoning                         // Two-pass reasoning trace
 }
 
 // --- Discriminated union ---
