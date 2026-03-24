@@ -31,7 +31,7 @@ Pick ONE side of each axis. Do not hedge. Your entire extraction must be interna
 
 const QUALITY_GATES = `Quality gates — every output must pass these:
 - Anti-patterns must be CONCRETE visual boundaries. Good: "bold geometric type" vs "playful script fonts". Bad: "good design" vs "bad design".
-- Direction summary needs contrast and positioning. Good: "Restrained editorial warmth — not corporate, not playful." Bad: "Modern and clean design."
+- Direction summary must be GROUNDED in what the images actually show — describe the aesthetic through visible subjects, settings, and mood. Good: "Nocturnal urban motion — neon-lit, blurred, voyeuristic." Bad: "Poison green bleeds crimson." Bad: "Modern and clean design." No abstract poetry — evocative but accurate.
 - Colors must have a clear dominant/accent hierarchy. 5 equally weighted colors = failure.
 - Typography: SPECIFIC Google Font families that match the mood. NEVER default to Inter, Roboto, Open Sans, Lato, or Montserrat.
 - Mood tags must be evocative and specific. Good: "visceral", "weathered", "nocturnal". Bad: "modern", "clean", "professional".
@@ -113,7 +113,7 @@ ${QUALITY_GATES}`
 
 // ─── Web/App User Prompt ───
 
-export function buildWebAppPrompt(imageCount: number, useCase?: string, sourceContext?: string): string {
+export function buildWebAppPrompt(imageCount: number, useCase?: string, sourceContext?: string, appealContext?: string): string {
   const useCaseContext = useCase
     ? `\nThe user is building: "${useCase}"
 This is critical context — it should actively shape your extraction:
@@ -129,8 +129,13 @@ This is critical context — it should actively shape your extraction:
 Use this to inform your extraction — if you recognize the source material, let it shape your understanding of the visual language, era, and intent behind these images.\n`
     : ''
 
+  const appealBlock = appealContext
+    ? `\nThe user said what draws them to these images: "${appealContext}"
+This is their subjective lens — it tells you what to AMPLIFY in the extraction. If they say "the motion blur and neon glow," your color palette, texture, and mood should all lean into that. If they say "the clean typography and whitespace," focus there instead. The user's stated appeal is the priority signal for resolving ambiguity.\n`
+    : ''
+
   return `Analyze these ${imageCount} images and extract a unified Design DNA for web/app design.
-${useCaseContext}${sourceContextBlock}
+${useCaseContext}${sourceContextBlock}${appealBlock}
 Return a JSON object with this exact structure:
 {
   "board_name": "2-4 words, distinctive",
@@ -203,7 +208,7 @@ Return ONLY valid JSON, no markdown fences, no explanation.`
 
 // ─── Image Gen User Prompt ───
 
-export function buildImageGenPrompt(imageCount: number, useCase?: string, sourceContext?: string): string {
+export function buildImageGenPrompt(imageCount: number, useCase?: string, sourceContext?: string, appealContext?: string): string {
   const useCaseContext = useCase
     ? `\nThe user wants to generate: "${useCase}"
 This is critical context — it should actively shape your extraction:
@@ -218,8 +223,13 @@ This is critical context — it should actively shape your extraction:
 Use this to inform your extraction — if you recognize the source material, let it shape your understanding of the visual language, era, and intent behind these images.\n`
     : ''
 
+  const appealBlock = appealContext
+    ? `\nThe user said what draws them to these images: "${appealContext}"
+This is their subjective lens — it tells you what to AMPLIFY in the extraction. If they say "the motion blur and neon glow," your color palette, texture, and mood should all lean into that. If they say "the grain and faded tones," focus there instead. The user's stated appeal is the priority signal for resolving ambiguity.\n`
+    : ''
+
   return `Analyze these ${imageCount} images and extract a unified Design DNA for image generation.
-${useCaseContext}${sourceContextBlock}
+${useCaseContext}${sourceContextBlock}${appealBlock}
 Return a JSON object with this exact structure:
 {
   "board_name": "2-4 words, distinctive",
