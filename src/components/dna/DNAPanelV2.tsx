@@ -39,6 +39,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('designer')
   const [sourceContext, setSourceContext] = useState<string>('')
+  const [appealContext, setAppealContext] = useState<string>('')
   const [feedback, setFeedback] = useState<string | null>(null)
   const [themeApplied, setThemeApplied] = useState(false)
   const [showRegenPrompt, setShowRegenPrompt] = useState(false)
@@ -91,13 +92,14 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
   }, [boardName, canvasId, editor, loadedBoardName])
 
   const extractDNA = useCallback(
-    async (selectedMedium: Medium, selectedUseCase: string, selectedSourceContext?: string) => {
+    async (selectedMedium: Medium, selectedUseCase: string, selectedSourceContext?: string, selectedAppealContext?: string) => {
       if (!boardName || imageUrls.length === 0) return
 
       setState('extracting')
       setMedium(selectedMedium)
       setUseCase(selectedUseCase)
       if (selectedSourceContext !== undefined) setSourceContext(selectedSourceContext)
+      if (selectedAppealContext !== undefined) setAppealContext(selectedAppealContext)
       setError(null)
 
       try {
@@ -110,6 +112,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
             medium: selectedMedium,
             useCase: selectedUseCase || undefined,
             sourceContext: selectedSourceContext || undefined,
+            appealContext: selectedAppealContext || undefined,
             imageUrls,
             feedback: feedback || undefined,
           }),
@@ -152,6 +155,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         medium,
         useCase: useCase || undefined,
         sourceContext: sourceContext || undefined,
+        appealContext: appealContext || undefined,
         imageUrls,
         feedback: feedbackText,
         previousDna: feedbackText ? dna : undefined,
@@ -171,7 +175,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         setError(err instanceof Error ? err.message : 'Extraction failed')
         setState('error')
       })
-  }, [medium, boardName, canvasId, useCase, sourceContext, imageUrls, feedback])
+  }, [medium, boardName, canvasId, useCase, sourceContext, appealContext, imageUrls, feedback])
 
   const handleDetach = useCallback(() => {
     if (!dna || !medium || !boardName) return

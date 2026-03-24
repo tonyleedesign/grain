@@ -18,7 +18,6 @@ const WEB_ANTI_SLOP = `## What NOT to Do
 const WEB_IMPLEMENTATION = `## Implementation Rules
 - Use CSS custom properties for all values — no hardcoded colors or sizes in components
 - Typography: pair a distinctive display face with a readable body face — never use the same font for both
-- Grid-breaking: let one element overlap, bleed, or break the grid per section
 - Match complexity to vision — a brutalist site needs different code patterns than a luxury one`
 
 const IMAGE_GEN_ANTI_SLOP = `## What NOT to Do

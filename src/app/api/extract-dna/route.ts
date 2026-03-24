@@ -19,13 +19,14 @@ const anthropic = new Anthropic({
 
 export async function POST(request: NextRequest) {
   try {
-    const { boardName, canvasId, medium, useCase, sourceContext, imageUrls, feedback, previousDna } =
+    const { boardName, canvasId, medium, useCase, sourceContext, appealContext, imageUrls, feedback, previousDna } =
       (await request.json()) as {
         boardName: string
         canvasId: string
         medium: Medium
         useCase?: string
         sourceContext?: string
+        appealContext?: string
         imageUrls: string[]
         feedback?: string
         previousDna?: Record<string, unknown>
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
     // Select prompt based on medium
     const systemPrompt = medium === 'web' ? WEB_APP_SYSTEM : IMAGE_GEN_SYSTEM
     const userPromptBuilder = medium === 'web' ? buildWebAppPrompt : buildImageGenPrompt
-    let userPrompt = userPromptBuilder(imageUrls.length, useCase, sourceContext)
+    let userPrompt = userPromptBuilder(imageUrls.length, useCase, sourceContext, appealContext)
 
     // Inject feedback + previous DNA if regenerating
     if (feedback) {
