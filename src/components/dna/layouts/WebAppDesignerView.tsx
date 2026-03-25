@@ -11,6 +11,7 @@ import { WebTextureField } from '../fields/WebTextureField'
 import { MotionField } from '../fields/MotionField'
 import { ImageTreatmentField } from '../fields/ImageTreatmentField'
 import { AntiPatternsField } from '../fields/AntiPatternsField'
+import { CreativeDirectionField } from '../fields/CreativeDirectionField'
 import { MoodTagsField } from '../fields/MoodTagsField'
 import { PatternEvidenceField } from '../fields/PatternEvidenceField'
 
@@ -33,6 +34,13 @@ export function WebAppDesignerView({ dna, imageUrls }: WebAppDesignerViewProps) 
       <p className="text-[13px] italic leading-snug" style={{ color: 'var(--color-text)' }}>
         {dna.direction_summary}
       </p>
+
+      {dna.creative_direction && dna.creative_direction.length > 0 && (
+        <>
+          <Divider />
+          <CreativeDirectionField creativeDirection={dna.creative_direction} />
+        </>
+      )}
 
       <Divider />
 

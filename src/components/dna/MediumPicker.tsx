@@ -123,28 +123,6 @@ export function MediumPicker({ onSubmit, imageCount }: MediumPickerProps) {
         />
       </div>
 
-      <div>
-        <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
-          What draws you to these?
-        </label>
-        <p className="text-[10px] mb-1.5" style={{ color: 'var(--color-muted)' }}>
-          Tell us what you like — the mood, colors, texture, composition, feeling. Helps the AI focus on what matters to you.
-        </p>
-        <textarea
-          value={appealContext}
-          onChange={(e) => setAppealContext(e.target.value)}
-          placeholder="e.g. the motion blur and neon glow, the moody urban atmosphere, the cinematic framing"
-          rows={2}
-          className="w-full text-[13px] p-2 resize-none rounded-md"
-          style={{
-            border: '1px solid var(--color-border)',
-            backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-text)',
-            fontFamily: 'var(--font-family)',
-          }}
-        />
-      </div>
-
       <button
         disabled={!selected || !useCase.trim()}
         onClick={() => selected && onSubmit(selected, useCase, sourceContext.trim() || undefined, appealContext.trim() || undefined)}

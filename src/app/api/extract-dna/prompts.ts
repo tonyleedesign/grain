@@ -119,7 +119,7 @@ export function buildObservePrompt(
 ${sourceBlock}
 For each image, describe what a careful viewer would notice first. Lead with what is visually dominant or unusual. Do not force complete coverage — only mention details that materially shape the image. If something is uncertain, say it is uncertain.
 
-After describing what is most immediately striking, notice any secondary details that materially shape the image: surface quality, edge treatment, spatial tension, lighting behavior, or the relationship between type and image. Only mention them if they are actually present and visually important.
+After describing what is most immediately striking, notice any secondary details that materially shape the image: surface quality, edge treatment, spatial tension, lighting behavior, or the relationship between type and image. If texture matters, describe what kind of physical texture it resembles: film grain, print dots, photocopy noise, scan noise, paper fiber, grit, bloom, blur, or compression. Only mention these if they are actually present and visually important.
 
 After describing each image, describe what repeats across the set, what conflicts, what single quality makes the collection unmistakable, and what would make it feel generic if introduced.
 
@@ -229,7 +229,13 @@ Return a JSON object with this exact structure:
     "background": ["2-4 keywords"],
     "finish": "matte|glossy|frosted|raw",
     "light_behavior": "absorptive|reflective|mixed",
-    "shadow_crush": "none|moderate|heavy"
+    "shadow_crush": "none|moderate|heavy",
+    "primary_texture": {
+      "family": "film-grain|halftone|photocopy-noise|scan-noise|paper-fiber|asphalt-grit|compression-artifacts|none",
+      "intensity": "subtle|moderate|heavy",
+      "application": "image-only|background-only|surface-only|global",
+      "rationale": "Short phrase explaining why this texture belongs"
+    }
   },
   "motion": {
     "level": "static|subtle|expressive|immersive",
@@ -248,9 +254,16 @@ Return a JSON object with this exact structure:
     "content_tone": ["3-4 writing style directives"],
     "standout_tips": ["2-3 tips specific to this project type"]
   },
+  "creative_direction": [
+    {
+      "section": "Short label like Hero, Projects, Gallery",
+      "direction": "Scene description: what visual materials appear, what the composition feels like, what kind of assets belong here. Vivid enough that a developer who has never seen the reference images can build it."
+    }
+  ],
   "anti_patterns": [
     { "this_is": "2-6 words", "not_that": "2-6 words" }
   ],
+  "positioning": "1-2 sentences. Closest to [archetype], but [key differences]. Avoid drifting into [generic version].",
   "mood_tags": ["single", "words", "only"],
   "direction_summary": "Max 15 words. Format: [What it is] — not [what it's not]",
   "evidence": [
@@ -259,19 +272,21 @@ Return a JSON object with this exact structure:
 }
 
 Rules:
-- The reasoning field comes FIRST. It is a trace of what was observed and how those observations were resolved into one direction. Every field that follows is a BINDING consequence of the reasoning — if your reasoning says "outlined stroke-only type," your typography must be an outlined or ultra-thin font, not a filled sans-serif. If your anti-patterns reject something, no other field may reintroduce it. Read your reasoning back before generating each field and verify it follows.
+- The reasoning field comes FIRST. It is a trace of what was observed and how those observations were resolved into one direction. Every field that follows is a BINDING consequence of the reasoning. If the reasoning identifies a specific visual quality, the matching field must preserve it — for example, if the reasoning calls for outlined or skeletal typography, do not replace it with a generic filled sans. If your anti-patterns reject something, no other field may reintroduce it. Read your reasoning back before generating each field and verify it follows.
 - Exactly 5 colors with semantic roles. These must be SOLID, INTENTIONAL design colors — derived from what the observations describe, not ambient lighting.
-- overlays: 2-4 transparent layers as rgba values for scrims, tints, color grades.
+- overlays: 2-4 transparent layers as rgba values for readability or tonal control. Do not stack them into generic atmosphere by default.
 - Typography: choose from the FONT CANDIDATES list below. Pick the font whose classification and expressive traits best match the observations and your axis commitments. If no letterforms were described in observations, choose fonts that match the overall mood. Do NOT pick fonts outside this list.
 - border_radius: single number 0-24. 0=brutalist, 4-6=sharp professional, 8-12=balanced, 16+=friendly rounded
-- texture: derive from surface descriptions in the observations. Name the main texture strategy, not a pile of atmospheric effects. Do not default to blur, frosted glass, grain overlays, or haze unless the observations explicitly support them.
+- texture: derive from surface descriptions in the observations. Name the main texture strategy, not a pile of atmospheric effects. If grain or texture is important, specify the exact primary_texture family rather than saying only "grain" or "texture". Distinguish concrete types like film-grain, halftone, photocopy-noise, scan-noise, paper-fiber, asphalt-grit, or compression-artifacts, then place them deliberately. Do not default to blur, frosted glass, grain overlays, or haze unless the observations explicitly support them.
 - motion: infer from the design style and energy level described. Motion level must match approach: static/subtle = css-only or framer-motion, expressive = gsap, immersive = webgl/three.js. Do not pair subtle motion with gsap.
 - project_instructions: if observations describe layout patterns, use them. Otherwise recommend for the project type.
-- Exactly 3 anti_patterns with concrete visual boundaries. Anti-patterns must describe reusable visual direction, not the literal subject matter of a specific reference image. Prefer the design quality an image implies ("lifestyle softness", "friendly warmth", "polished luxury sheen") over the exact depicted pose, object, or scene, unless the medium is image generation and subject matter is structurally important.
+- creative_direction: Write entries for sections that most depend on imagery, composition, or asset world. Hero and showcase sections should be the richest. Utility sections like contact or footer may be brief or omitted if they do not need strong art direction. Use short section labels (e.g. "Hero", "Projects", "Gallery"), not the full section description from project_instructions. The observations are your primary source for what visual materials, assets, and compositions belong in each section — ground hero and image-heavy sections strictly in what was actually observed. Do not invent visual elements that weren't present in any reference for these sections. Utility sections that have no direct reference coverage may extrapolate from the overall aesthetic. Be vivid about what visual materials appear: subject type, asset type, collage elements, background world, and supporting overlays. Describe the visual scene and asset world, not CSS, coordinates, or interaction code. Composition words like centered, off-center, layered, scattered, close-up, full-bleed, or background-led are allowed — exact pixel placement is not. Do not reference images by number — describe what things look like, not which reference they came from. Distinguish between surface texture (paper-crumple, concrete) and image content (outdoor portraits, concert photography).
+- Exactly 3 anti_patterns with concrete visual drift boundaries. Anti-patterns are directional guardrails, not universal bans. They should describe what this direction moves away from, not claim that the rejected quality is always wrong. Anti-patterns must describe reusable visual direction, not the literal subject matter of a specific reference image. Prefer the design quality an image implies ("lifestyle softness", "friendly warmth", "polished luxury sheen") over the exact depicted pose, object, or scene, unless the medium is image generation and subject matter is structurally important.
+- positioning: rewrite the archetype_check as a compact positioning statement for downstream design and coding models. Format: "Closest to [archetype], but [key differences]. Avoid drifting into [generic version]." Keep only the most important distinctions. Do not include brand names unless they are essential.
 - 3-5 mood_tags, single words only. Must be evocative.
 - 3-5 evidence items grounding key patterns in specific images.
 - direction_summary must synthesize anti-patterns into one positioning statement with contrast.
-- REJECT: sentences longer than 6 words (except direction_summary), vague adjectives, metaphors.
+- REJECT: sentences longer than 6 words (except direction_summary and creative_direction entries), vague adjectives, metaphors.
 ${COMMITMENT_INSTRUCTIONS}
 ${fontShortlist ? `
 FONT CANDIDATES — choose display and body fonts from this list ONLY:
@@ -352,6 +367,7 @@ Return a JSON object with this exact structure:
   "anti_patterns": [
     { "this_is": "2-6 words", "not_that": "2-6 words" }
   ],
+  "positioning": "1-2 sentences. Closest to [archetype], but [key differences]. Avoid drifting into [generic version].",
   "mood_tags": ["single", "words", "only"],
   "direction_summary": "Max 15 words. Format: [What it is] — not [what it's not]",
   "evidence": [
@@ -360,12 +376,13 @@ Return a JSON object with this exact structure:
 }
 
 Rules:
-- The reasoning field comes FIRST. It is a trace of what was observed and how those observations were resolved into one direction. Every field that follows is a BINDING consequence of the reasoning — if your reasoning says "outlined stroke-only type," your typography must be an outlined or ultra-thin font, not a filled sans-serif. If your anti-patterns reject something, no other field may reintroduce it. Read your reasoning back before generating each field and verify it follows.
+- The reasoning field comes FIRST. It is a trace of what was observed and how those observations were resolved into one direction. Every field that follows is a BINDING consequence of the reasoning. If the reasoning identifies a specific visual quality, the matching field must preserve it — for example, if the reasoning calls for outlined or skeletal typography, do not replace it with a generic filled sans. If your anti-patterns reject something, no other field may reintroduce it. Read your reasoning back before generating each field and verify it follows.
 - 5 hex colors that capture the dominant palette — derived from color descriptions in observations.
 - medium_type.primary: choose ONE. sub_tags: 2-4 specific technique references.
 - lighting: 2-4 professional terms. NO camera settings like f/1.4.
 - texture.level: one of four enums. keywords: 2-4 specific texture words.
-- Exactly 3 anti_patterns with concrete visual boundaries. Anti-patterns must describe reusable visual direction, not the literal subject matter of a specific reference image. Prefer the design quality an image implies ("lifestyle softness", "friendly warmth", "polished luxury sheen") over the exact depicted pose, object, or scene, unless the medium is image generation and subject matter is structurally important.
+- Exactly 3 anti_patterns with concrete visual drift boundaries. Anti-patterns are directional guardrails, not universal bans. They should describe what this direction moves away from, not claim that the rejected quality is always wrong. Anti-patterns must describe reusable visual direction, not the literal subject matter of a specific reference image. Prefer the design quality an image implies ("lifestyle softness", "friendly warmth", "polished luxury sheen") over the exact depicted pose, object, or scene, unless the medium is image generation and subject matter is structurally important.
+- positioning: rewrite the archetype_check as a compact positioning statement for downstream design and coding models. Format: "Closest to [archetype], but [key differences]. Avoid drifting into [generic version]." Keep only the most important distinctions. Do not include brand names unless they are essential.
 - 3-5 mood_tags, single words only. Must be evocative.
 - 3-5 evidence items.
 - direction_summary synthesizes anti-patterns into one positioning statement with contrast.
