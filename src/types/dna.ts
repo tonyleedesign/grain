@@ -39,9 +39,21 @@ export interface WebAppDNA {
     section: string    // short label like "Hero", "Projects", "Gallery"
     direction: string  // vivid scene description: assets, composition, background, overlays
   }>
+  theme_recommendation?: {
+    library: string           // e.g. "shadcn", "shadcn + aceternity-ui", "shadcn + magic-ui", "daisyui"
+    theme_preset?: string     // for DaisyUI: named theme like "retro", "cyberpunk", "pastel". null for custom shadcn
+    rationale: string         // why this library/theme fits the board's aesthetic
+    component_notes: string   // which components to use, which variants, what to avoid
+  }
+  composition_layout?: {
+    page_archetype: string      // what kind of page this is and how it's organized (e.g. "Single-page scroll with full-bleed hero, masonry gallery, and minimal footer")
+    structure: string           // how sections relate, what dominates, grid vs freeform, section rhythm
+    spatial_rules: string       // overlap behavior, depth layering, alignment, container discipline, whitespace role
+    responsive_notes: string    // what must survive on small screens, what can reflow or collapse, breakpoint priorities
+  }
   color_palette: {
     colors: Array<{ hex: string; role: string }>  // 5 semantic colors
-    overlays: Array<{ rgba: string; use: string }> // transparent layers: scrims, tints, color grades
+    overlays: Array<{ intent: string }> // transparent layer descriptions: what it does and why, not hard values
     relationship: string                           // 4 words max
   }
   typography: {
@@ -52,16 +64,9 @@ export interface WebAppDNA {
   spacing_density: 'compact' | 'comfortable' | 'spacious'
   shadow_style: 'none' | 'subtle' | 'layered' | 'elevated'
   texture: {
-    background: string[]                           // e.g. ["noise overlay", "gradient mesh", "grain"]
-    finish: 'matte' | 'glossy' | 'frosted' | 'raw'
-    light_behavior: 'absorptive' | 'reflective' | 'mixed'  // how surfaces respond to light
-    shadow_crush: 'none' | 'moderate' | 'heavy'             // how much shadow detail is preserved
-    primary_texture?: {
-      family: 'film-grain' | 'halftone' | 'photocopy-noise' | 'scan-noise' | 'paper-fiber' | 'asphalt-grit' | 'compression-artifacts' | 'none'
-      intensity: 'subtle' | 'moderate' | 'heavy'
-      application: 'image-only' | 'background-only' | 'surface-only' | 'global'
-      rationale: string
-    }
+    surface_feel: string                           // descriptive: what surfaces feel like (e.g. "uncoated paper stock, tactile and dry")
+    light_and_depth: string                        // descriptive: how light and shadow behave (e.g. "flat and absorptive, shadows swallow detail")
+    texture_strategy: string                       // descriptive: what creates texture and where (e.g. "film grain on photography, clean surfaces elsewhere")
   }
   motion: {
     level: 'static' | 'subtle' | 'expressive' | 'immersive'
