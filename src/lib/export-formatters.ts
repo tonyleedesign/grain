@@ -3,6 +3,7 @@
 // and anti-slop techniques. The export is a behavioral contract, not just tokens.
 
 import type { WebAppDNA, ImageGenDNA, Medium } from '@/types/dna'
+import { generateShadcnTheme } from './theme-generator'
 
 // --- Formatters ---
 
@@ -70,6 +71,37 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
       sections.push('')
     }
   }
+  // Theme recommendation
+  if (dna.theme_recommendation) {
+    sections.push(`## Theme`)
+    sections.push(`**Library:** ${dna.theme_recommendation.library}`)
+    if (dna.theme_recommendation.theme_preset) {
+      sections.push(`**Preset:** ${dna.theme_recommendation.theme_preset}`)
+    }
+    sections.push(`**Why:** ${dna.theme_recommendation.rationale}`)
+    sections.push('')
+    sections.push(`**Components:** ${dna.theme_recommendation.component_notes}`)
+    sections.push('')
+    // Generate shadcn CSS variables from DNA tokens
+    if (!dna.theme_recommendation.theme_preset) {
+      sections.push('**CSS Variables (shadcn theme):**')
+      sections.push('```css')
+      sections.push(generateShadcnTheme(dna.color_palette.colors, dna.border_radius))
+      sections.push('```')
+      sections.push('')
+    }
+  }
+
+  // Composition & Layout
+  if (dna.composition_layout) {
+    sections.push(`## Composition & Layout`)
+    sections.push(`**Page archetype:** ${dna.composition_layout.page_archetype}`)
+    sections.push(`**Structure:** ${dna.composition_layout.structure}`)
+    sections.push(`**Spatial rules:** ${dna.composition_layout.spatial_rules}`)
+    sections.push(`**Responsive:** ${dna.composition_layout.responsive_notes}`)
+    sections.push('')
+  }
+
   // Design thinking - attitude, not just tokens
   sections.push(`## Design Thinking`)
   sections.push(`**Mood:** ${dna.mood_tags.join(' | ')}`)
@@ -97,9 +129,9 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   }
   if (dna.color_palette.overlays?.length) {
     sections.push('')
-    sections.push('  /* Overlays & transparent layers */')
+    sections.push('  /* Overlay intent (downstream model decides exact values) */')
     dna.color_palette.overlays.forEach((overlay, i) => {
-      sections.push(`  --overlay-${i + 1}: ${overlay.rgba}; /* ${overlay.use} */`)
+      sections.push(`  /* overlay-${i + 1}: ${overlay.intent} */`)
     })
   }
   sections.push('}')
@@ -138,47 +170,9 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   // Texture & surface
   if (dna.texture) {
     sections.push(`## Texture & Surface`)
-    const finishGuide: Record<string, string> = {
-      'matte': 'Flat, non-reflective surfaces. No glossy effects, no glass-morphism. Think paper, concrete, chalk.',
-      'glossy': 'Reflective, polished surfaces. Glass-morphism, sheen effects, and high-contrast highlights are appropriate.',
-      'frosted': 'Softly diffused, semi-transparent surfaces. Achieve separation through tonal layering and translucency before reaching for heavy blur.',
-      'raw': 'Unpolished, textured surfaces. Prioritize material contrast, tonal compression, and imperfect edges before adding any explicit grain treatment.',
-    }
-    const primaryTextureGuide: Record<string, string> = {
-      'film-grain': 'Organic film-like noise with tonal variation. Best on photography or large imagery, not every UI surface.',
-      'halftone': 'Visible print dots and mechanical reproduction texture. Use with restraint as a graphic/print device, not a global fog.',
-      'photocopy-noise': 'Harsh copier speckle, bloom, and toner breakup. Good for zine or xerox aesthetics where rough reproduction is part of the concept.',
-      'scan-noise': 'Dust, streaks, and scan-bed artifacts. Best when references feel digitized, archived, or imperfectly captured.',
-      'paper-fiber': 'Dry paper tooth or pulp texture. Better as a surface/material cue than an atmospheric overlay.',
-      'asphalt-grit': 'Dirty mineral grit and rough urban texture. Use to ground surfaces or imagery, not to soften everything.',
-      'compression-artifacts': 'Blockiness, banding, or degraded digital texture. Works when the references feel intentionally low-fidelity or transmitted.',
-      'none': 'No single texture family should dominate. Let material contrast and tonal structure carry the feel.',
-    }
-    sections.push(finishGuide[dna.texture.finish] || `Finish: ${dna.texture.finish}`)
-    if (dna.texture.light_behavior) {
-      const lightGuide: Record<string, string> = {
-        'absorptive': 'Surfaces absorb light - no specular highlights, no gloss effects, no glass-morphism. Light dies on contact.',
-        'reflective': 'Surfaces reflect light - specular highlights, glossy effects, and glass-morphism are appropriate. Light bounces and shines.',
-        'mixed': 'Both matte and reflective surfaces coexist - use contrast between absorptive backgrounds and reflective interactive elements.',
-      }
-      sections.push(`**Light behavior:** ${lightGuide[dna.texture.light_behavior] || dna.texture.light_behavior}`)
-    }
-    if (dna.texture.shadow_crush) {
-      const shadowGuide: Record<string, string> = {
-        'none': 'Preserve full shadow detail - no crushed blacks, keep tonal range open.',
-        'moderate': 'Allow some shadow compression - darks can lose detail but midtones stay readable.',
-        'heavy': 'Embrace deep, crushed blacks - shadows swallow detail, creating dramatic contrast and mystery.',
-      }
-      sections.push(`**Shadows:** ${shadowGuide[dna.texture.shadow_crush] || dna.texture.shadow_crush}`)
-    }
-    sections.push(`**Background treatments:** ${dna.texture.background.join(', ')}`)
-    if (dna.texture.primary_texture && dna.texture.primary_texture.family !== 'none') {
-      sections.push(`**Primary texture:** ${dna.texture.primary_texture.family} (${dna.texture.primary_texture.intensity}, ${dna.texture.primary_texture.application})`)
-      sections.push(primaryTextureGuide[dna.texture.primary_texture.family] || dna.texture.primary_texture.rationale)
-      sections.push(`**Why this fits:** ${dna.texture.primary_texture.rationale}`)
-    }
-    sections.push('')
-    sections.push(`Choose one primary texture strategy and apply it with restraint. Texture should come from image treatment, tonal variation, and material contrast before pseudo-element noise, blur, or overlay stacks. If it distracts from content, dial it back.`)
+    sections.push(`**Surface feel:** ${dna.texture.surface_feel}`)
+    sections.push(`**Light & depth:** ${dna.texture.light_and_depth}`)
+    sections.push(`**Texture strategy:** ${dna.texture.texture_strategy}`)
     sections.push('')
   }
 
