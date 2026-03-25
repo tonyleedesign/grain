@@ -30,6 +30,17 @@ const shadowCrushLabels: Record<string, string> = {
   'heavy': 'Deep blacks, shadows swallow detail',
 }
 
+const primaryTextureLabels: Record<string, string> = {
+  'film-grain': 'Film grain',
+  'halftone': 'Halftone print',
+  'photocopy-noise': 'Photocopy noise',
+  'scan-noise': 'Scan noise',
+  'paper-fiber': 'Paper fiber',
+  'asphalt-grit': 'Asphalt grit',
+  'compression-artifacts': 'Compression artifacts',
+  'none': 'None',
+}
+
 interface WebTextureFieldProps {
   texture: WebAppDNA['texture']
 }
@@ -97,6 +108,19 @@ export function WebTextureField({ texture }: WebTextureFieldProps) {
                   {bg}
                 </span>
               ))}
+            </div>
+          </div>
+        )}
+
+        {texture.primary_texture && texture.primary_texture.family !== 'none' && (
+          <div className="flex flex-col gap-1">
+            <div className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+              <span style={{ color: 'var(--color-text)' }}>Primary texture: </span>
+              {primaryTextureLabels[texture.primary_texture.family] || texture.primary_texture.family}
+              {` • ${texture.primary_texture.intensity} • ${texture.primary_texture.application}`}
+            </div>
+            <div className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+              {texture.primary_texture.rationale}
             </div>
           </div>
         )}

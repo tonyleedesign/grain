@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:brandguide.asu.edu)",
+      "WebFetch(domain:medium.com)"
+    ]
+  }
+}

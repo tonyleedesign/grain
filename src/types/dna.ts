@@ -34,6 +34,11 @@ export interface PatternEvidence {
 
 export interface WebAppDNA {
   board_name: string
+  positioning?: string                           // 1-2 sentences: nearest archetype + key differences + drift warning
+  creative_direction?: Array<{
+    section: string    // short label like "Hero", "Projects", "Gallery"
+    direction: string  // vivid scene description: assets, composition, background, overlays
+  }>
   color_palette: {
     colors: Array<{ hex: string; role: string }>  // 5 semantic colors
     overlays: Array<{ rgba: string; use: string }> // transparent layers: scrims, tints, color grades
@@ -51,6 +56,12 @@ export interface WebAppDNA {
     finish: 'matte' | 'glossy' | 'frosted' | 'raw'
     light_behavior: 'absorptive' | 'reflective' | 'mixed'  // how surfaces respond to light
     shadow_crush: 'none' | 'moderate' | 'heavy'             // how much shadow detail is preserved
+    primary_texture?: {
+      family: 'film-grain' | 'halftone' | 'photocopy-noise' | 'scan-noise' | 'paper-fiber' | 'asphalt-grit' | 'compression-artifacts' | 'none'
+      intensity: 'subtle' | 'moderate' | 'heavy'
+      application: 'image-only' | 'background-only' | 'surface-only' | 'global'
+      rationale: string
+    }
   }
   motion: {
     level: 'static' | 'subtle' | 'expressive' | 'immersive'
@@ -80,6 +91,7 @@ export interface WebAppDNA {
 
 export interface ImageGenDNA {
   board_name: string
+  positioning?: string
   color_palette: {
     colors: string[]   // 5 hex values
     mood: string
