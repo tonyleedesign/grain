@@ -18,6 +18,7 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
   const editor = useEditor()
   const [activeBoardName, setActiveBoardName] = useState<string | null>(null)
   const [panelVisible, setPanelVisible] = useState(false)
+  const [rightClickAI, setRightClickAI] = useState(false)
   const lastBoardName = useRef<string | null>(null)
 
   // Watch for selection changes reactively
@@ -59,12 +60,85 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
     }
   }, [editor])
 
+  // Right-click context menu: "Ask AI..." option
+  useEffect(() => {
+    const container = document.querySelector('.grain-canvas-wrapper')
+    if (!container) return
+
+    const handleContextMenu = (e: Event) => {
+      const mouseEvent = e as MouseEvent
+      if (editor.getSelectedShapes().length === 0) return
+
+      mouseEvent.preventDefault()
+
+      const existing = document.getElementById('grain-context-menu')
+      if (existing) existing.remove()
+
+      const menu = document.createElement('div')
+      menu.id = 'grain-context-menu'
+      menu.style.cssText = `
+        position: fixed;
+        left: ${mouseEvent.clientX}px;
+        top: ${mouseEvent.clientY}px;
+        z-index: 2000;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-panel);
+        padding: 4px;
+        font-family: var(--font-family);
+        font-size: 12px;
+      `
+
+      const askAI = document.createElement('button')
+      askAI.innerHTML = '&#x2728; Ask AI...'
+      askAI.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        padding: 6px 12px;
+        border: none;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--color-text);
+        font-family: var(--font-family);
+        font-size: 12px;
+        cursor: pointer;
+        text-align: left;
+      `
+      askAI.onmouseenter = () => { askAI.style.background = 'var(--color-bg)' }
+      askAI.onmouseleave = () => { askAI.style.background = 'transparent' }
+      askAI.onclick = () => {
+        menu.remove()
+        setRightClickAI(true)
+      }
+
+      menu.appendChild(askAI)
+      document.body.appendChild(menu)
+
+      const cleanup = () => {
+        menu.remove()
+        document.removeEventListener('mousedown', cleanup)
+      }
+      setTimeout(() => document.addEventListener('mousedown', cleanup), 0)
+    }
+
+    container.addEventListener('contextmenu', handleContextMenu)
+    return () => container.removeEventListener('contextmenu', handleContextMenu)
+  }, [editor])
+
   const boardToRender = activeBoardName || lastBoardName.current
 
   return (
     <>
       <OrganizeButton canvasId={canvasId} />
-      <AIActionBar canvasId={canvasId} onExtractDna={handleExtractDna} />
+      <AIActionBar
+        canvasId={canvasId}
+        onExtractDna={handleExtractDna}
+        forceExpanded={rightClickAI}
+        onForceExpandedConsumed={() => setRightClickAI(false)}
+      />
       {boardToRender && (
         <div style={{ display: panelVisible ? 'contents' : 'none' }}>
           <DNAPanelV2
