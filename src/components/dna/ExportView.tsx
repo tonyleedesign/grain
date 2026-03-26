@@ -95,17 +95,13 @@ function WebExportView({ dna, useCase, boardId, imageUrls }: {
 
   // Initialize checked state from AI classification
   const [checkedImages, setCheckedImages] = useState<boolean[]>(() => {
-    return imageUrls.map((_, i) => {
-      const role = dna.image_roles?.find(r => r.image_index === i)
-      return role?.role === 'usable_asset'
-    })
+    return imageUrls.map(() => true)
   })
 
   // Reset when DNA is regenerated or images change
   useEffect(() => {
     setCheckedImages(imageUrls.map((_, i) => {
-      const role = dna.image_roles?.find(r => r.image_index === i)
-      return role?.role === 'usable_asset'
+      return true
     }))
   }, [dna.image_roles, imageUrls])
 
@@ -142,9 +138,14 @@ function WebExportView({ dna, useCase, boardId, imageUrls }: {
         imageUrls,
         checkedIndices,
       })
+      setShowFeedback(true)
+    } catch (err) {
+      // User cancelled the folder picker — not an error
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      console.error('Download failed:', err)
+      alert(`Download failed: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setDownloading(false)
-      setShowFeedback(true)
     }
   }
 
@@ -159,14 +160,14 @@ function WebExportView({ dna, useCase, boardId, imageUrls }: {
   }
 
   const tabs: { key: WebFileTab; label: string; disabled?: boolean }[] = [
-    { key: 'readme', label: 'README' },
+    { key: 'readme', label: 'Read Me' },
     { key: 'style', label: 'Style' },
     { key: 'composition', label: 'Composition' },
     { key: 'assets', label: 'Assets', disabled: !hasCheckedImages },
   ]
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 min-w-0">
       {/* Header */}
       <div className="flex items-center gap-2 px-1">
         <Sparkles size={12} style={{ color: 'var(--color-accent)' }} />
@@ -182,7 +183,6 @@ function WebExportView({ dna, useCase, boardId, imageUrls }: {
             key={tab.key}
             active={activeTab === tab.key}
             onClick={() => !tab.disabled && setActiveTab(tab.key)}
-            icon={<FileText size={11} />}
             disabled={tab.disabled}
           >
             {tab.label}
@@ -270,7 +270,7 @@ function PreviewBlock({ content, onCopy, copied }: { content: string; onCopy: ()
   return (
     <div className="relative">
       <pre
-        className="text-[11px] leading-relaxed p-3 rounded-md overflow-x-auto whitespace-pre-wrap"
+        className="text-[11px] leading-relaxed p-3 rounded-md whitespace-pre-wrap"
         style={{
           backgroundColor: 'var(--color-bg)',
           color: 'var(--color-text)',
@@ -278,6 +278,10 @@ function PreviewBlock({ content, onCopy, copied }: { content: string; onCopy: ()
           fontFamily: 'monospace',
           maxHeight: '400px',
           overflowY: 'auto',
+          overflowX: 'hidden',
+          overflowWrap: 'break-word',
+          wordBreak: 'break-word',
+          minWidth: 0,
         }}
       >
         {content}
@@ -309,7 +313,7 @@ function FormatButton({
   children: React.ReactNode
   active: boolean
   onClick: () => void
-  icon: React.ReactNode
+  icon?: React.ReactNode
   disabled?: boolean
 }) {
   return (

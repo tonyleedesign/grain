@@ -21,7 +21,7 @@ Replace the single clipboard export with a **4-file download package** plus **AI
 - Board name + direction summary
 - Project instructions (if use case was provided): project summary, sections, content tone, standout tips
 - Positioning statement
-- Frontend library recommendation + rationale
+- Frontend library recommendation + rationale — framed as a starting point, not a mandate. If the downstream tool knows a better-fit library for the direction, it should use that instead
 - Anti-patterns (favor X / avoid Y pairs)
 - Mood tags
 
@@ -41,8 +41,9 @@ Replace the single clipboard export with a **4-file download package** plus **AI
 **assets.md** — Reference images and usage guidance (conditional)
 - Only generated when at least one image is marked for inclusion
 - Image roles with descriptions (how to use each: hero, background, texture, etc.)
-- Each included image is listed as a markdown image embed using its original URL: `![role description](url)`
-- If ALL images are style references (none checked), this file is omitted — download is 3 files
+- Each included image referenced by local filename: `![role description](asset-1.jpg)`
+- The actual image files are downloaded alongside the markdown files (fetched from canvas URLs)
+- If ALL images are style references (none checked), this file and its images are omitted — download is 3 files
 
 ### Design Principles
 
@@ -115,8 +116,8 @@ image_roles?: Array<{
    - Updating checkboxes regenerates the Assets tab preview in real time
 
 4. **"Download Package" button**: At the bottom of the Export tab
-   - Triggers 3 or 4 simultaneous browser downloads (no zip, no folder picker)
-   - Downloads: README.md, style.md, composition.md, and assets.md (if images checked)
+   - Triggers staggered browser downloads (no zip, no folder picker)
+   - Downloads: README.md, style.md, composition.md, assets.md (if images checked), plus the actual image files for each checked image
    - Standard browser download behavior — files land in user's Downloads folder
 
 **Prop changes:** `ExportView` must accept `imageUrls: string[]` as a new prop. `DNAPanelV2` already has `imageUrls` in state — wire it through to `ExportView`.
@@ -130,7 +131,8 @@ image_roles?: Array<{
 Simple `document.createElement('a')` + click pattern for each file. No zip library, no File System Access API. Downloads are staggered by 100ms to avoid browser popup blockers that may flag rapid simultaneous downloads.
 
 ```typescript
-function downloadFile(filename: string, content: string) {
+// Markdown files
+function downloadMarkdown(filename: string, content: string) {
   const blob = new Blob([content], { type: 'text/markdown' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -139,7 +141,21 @@ function downloadFile(filename: string, content: string) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+// Image files — fetch from canvas URL, download as blob
+async function downloadImage(filename: string, imageUrl: string) {
+  const response = await fetch(imageUrl)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
 ```
+
+Image filenames follow the pattern `asset-1.jpg`, `asset-2.png` etc., matching what `assets.md` references.
 
 ---
 
@@ -214,9 +230,9 @@ Image generation DNA doesn't have the same export structure — it stays as-is w
 - Export tab UI redesign with file tabs
 - New focused formatters
 - Type addition for image_roles
+- Image file downloads — checked images are downloaded as actual files (jpg/png) alongside the markdown files
 
 **Not in scope (future work):**
-- Actual image file downloads (binary assets) — text references only for now
 - Direct integration with AI tools (Cursor, Claude, etc.)
 - Zip packaging
 - Drag-and-drop export

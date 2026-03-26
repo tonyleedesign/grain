@@ -18,6 +18,8 @@ import {
 import { matchFonts, formatFontShortlist } from '@/lib/font-matcher'
 import { extractSignals } from '@/lib/observation-signals'
 
+export const maxDuration = 120
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 })
@@ -40,41 +42,20 @@ async function runObservation(
     })),
   ]
 
-  let response: Anthropic.Messages.Message
-  try {
-    // Try with extended thinking first — improves observation depth
-    response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      thinking: {
-        type: 'enabled',
-        budget_tokens: 8000,
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4096,
+    system: [
+      {
+        type: 'text',
+        text: OBSERVE_SYSTEM,
+        cache_control: { type: 'ephemeral' },
       },
-      system: [
-        {
-          type: 'text',
-          text: OBSERVE_SYSTEM,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content }],
-    })
-  } catch (thinkingError) {
-    // Fallback: retry without extended thinking if API rejects it
-    console.warn('Extended thinking rejected, retrying without:', thinkingError)
-    response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      system: [
-        {
-          type: 'text',
-          text: OBSERVE_SYSTEM,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content }],
-    })
-  }
+    ],
+    messages: [{ role: 'user', content }],
+  })
+
+  console.log(`[Pass 1] tokens — input: ${response.usage.input_tokens}, output: ${response.usage.output_tokens}`)
 
   const textBlock = response.content.find((block) => block.type === 'text')
   if (!textBlock || textBlock.type !== 'text' || !textBlock.text.trim()) {
@@ -122,6 +103,8 @@ async function runSynthesis(
     ],
     messages: [{ role: 'user', content: userPrompt }],
   })
+
+  console.log(`[Pass 2] tokens — input: ${response.usage.input_tokens}, output: ${response.usage.output_tokens}`)
 
   const textBlock = response.content.find((block) => block.type === 'text')
   if (!textBlock || textBlock.type !== 'text') {

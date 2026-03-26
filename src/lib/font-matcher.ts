@@ -71,11 +71,10 @@ export function matchFonts(opts: {
   classifications?: string[]  // e.g. ['geometric-sans', 'neo-grotesque']
   moods?: string[]            // e.g. ['raw', 'industrial', 'vintage']
   themes?: string[]           // e.g. ['Stencil', 'Art Deco']
-  excludeFonts?: string[]     // e.g. ['Inter', 'Roboto'] — fonts to explicitly exclude
   role?: 'display' | 'body'   // display penalizes generic/calm fonts, body rewards readability
   limit?: number
 }): FontMatch[] {
-  const { classifications = [], moods = [], themes = [], excludeFonts = [], role, limit = 15 } = opts
+  const { classifications = [], moods = [], themes = [], role, limit = 15 } = opts
 
   // Resolve classification terms to tag paths
   const targetTags = new Set<string>()
@@ -91,15 +90,12 @@ export function matchFonts(opts: {
     if (mapped) traitRequirements.push(...mapped)
   }
 
-  const excludeSet = new Set(excludeFonts.map(f => f.toLowerCase()))
-
   // Filter out non-Latin script-specific font variants
   const SCRIPT_FONT_PATTERN = /^(Noto (Sans|Serif)|IBM Plex Sans) [A-Z]/
 
   const results: FontMatch[] = []
 
   for (const [name, entry] of Object.entries(fonts)) {
-    if (excludeSet.has(name.toLowerCase())) continue
     if (SCRIPT_FONT_PATTERN.test(name)) continue
 
     let score = 0

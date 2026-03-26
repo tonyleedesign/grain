@@ -1,43 +1,12 @@
-// Download utility — triggers browser downloads for the multi-file export package.
-// Markdown files are generated from strings, image files are fetched from canvas URLs.
+// Download utility — bundles export package into a single zip file.
 
+import JSZip from 'jszip'
 import type { WebAppDNA } from '@/types/dna'
 import { formatReadme, formatStyle, formatComposition, formatAssets, getImageExtension } from './export-formatters'
 
-function downloadBlob(filename: string, blob: Blob) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-function downloadMarkdown(filename: string, content: string) {
-  downloadBlob(filename, new Blob([content], { type: 'text/markdown' }))
-}
-
-async function downloadImage(filename: string, imageUrl: string) {
-  try {
-    const response = await fetch(imageUrl)
-    if (!response.ok) {
-      console.warn(`Failed to download ${filename}: ${response.status}`)
-      return
-    }
-    const blob = await response.blob()
-    downloadBlob(filename, blob)
-  } catch (err) {
-    console.warn(`Failed to download ${filename}:`, err)
-  }
-}
-
-function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 /**
- * Download the full export package: 3-4 markdown files + image files.
- * Downloads are staggered by 100ms to avoid browser popup blockers.
+ * Download the full export package as a single zip file.
+ * Contains markdown files + selected image files.
  */
 export async function downloadPackage(opts: {
   dna: WebAppDNA
@@ -46,32 +15,42 @@ export async function downloadPackage(opts: {
   checkedIndices: number[]
 }) {
   const { dna, useCase, imageUrls, checkedIndices } = opts
+  const zip = new JSZip()
 
   // Markdown files
-  downloadMarkdown('README.md', formatReadme(dna, useCase))
-  await delay(100)
-
-  downloadMarkdown('style.md', formatStyle(dna))
-  await delay(100)
-
-  downloadMarkdown('composition.md', formatComposition(dna))
-  await delay(100)
+  zip.file('README.md', formatReadme(dna, useCase))
+  zip.file('style.md', formatStyle(dna))
+  zip.file('composition.md', formatComposition(dna))
 
   // Assets (only if images are checked)
   if (checkedIndices.length > 0) {
     const assetsContent = formatAssets(dna, imageUrls, checkedIndices)
     if (assetsContent) {
-      downloadMarkdown('assets.md', assetsContent)
-      await delay(100)
+      zip.file('assets.md', assetsContent)
     }
 
-    // Download actual image files
+    // Fetch and add image files
     for (let pos = 0; pos < checkedIndices.length; pos++) {
       const idx = checkedIndices[pos]
       if (idx < 0 || idx >= imageUrls.length) continue
-      const ext = getImageExtension(imageUrls[idx])
-      await downloadImage(`asset-${pos + 1}.${ext}`, imageUrls[idx])
-      await delay(100)
+      try {
+        const response = await fetch(imageUrls[idx])
+        if (!response.ok) continue
+        const blob = await response.blob()
+        const ext = getImageExtension(imageUrls[idx])
+        zip.file(`asset-${pos + 1}.${ext}`, blob)
+      } catch {
+        console.warn(`Failed to fetch image ${idx}`)
+      }
     }
   }
+
+  // Generate and download zip
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'grain-export.zip'
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
