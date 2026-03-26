@@ -8,7 +8,7 @@ const BOARD_PADDING = 24
 const IMAGE_GAP = 12
 const ROW_HEIGHT = 250
 const MAX_ROW_WIDTH = 900
-const AI_TEXT_OFFSET_Y = 24
+const AI_TEXT_OFFSET = 24
 
 interface ExecutionResult {
   success: boolean
@@ -74,7 +74,7 @@ function executePlaceText(
   if (params.position === 'near_selection') {
     const bounds = editor.getSelectionPageBounds()
     if (bounds) {
-      x = bounds.maxX + AI_TEXT_OFFSET_Y
+      x = bounds.maxX + AI_TEXT_OFFSET
       y = bounds.minY
     } else {
       // Fallback: center of viewport
@@ -217,7 +217,7 @@ function executeRenameBoard(
   editor.updateShape({
     id: frame.id as TLShapeId,
     type: 'frame',
-    props: { ...(frame.props as unknown as Record<string, unknown>), name: params.newName },
+    props: { name: params.newName },
   })
 
   return { success: true, message: `Renamed to "${params.newName}"` }
