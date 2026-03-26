@@ -273,6 +273,13 @@ Return a JSON object with this exact structure:
   "direction_summary": "Max 15 words. Format: [What it is] — not [what it's not]",
   "evidence": [
     { "image_index": 0, "quality": "2-4 words", "region_hint": "center|top-left|background|etc", "conflict": "optional" }
+  ],
+  "image_roles": [
+    {
+      "image_index": 0,
+      "role": "usable_asset | style_reference",
+      "description": "string — how to use this image or what it informed"
+    }
   ]
 }
 
@@ -290,6 +297,7 @@ Rules:
 - positioning: rewrite the archetype_check as a compact positioning statement for downstream design and coding models. Format: "Closest to [archetype], but [key differences]. Avoid drifting into [generic version]." Keep only the most important distinctions. Do not include brand names unless they are essential.
 - 3-5 mood_tags, single words only. Must be evocative.
 - 3-5 evidence items grounding key patterns in specific images.
+- image_roles: One entry per image. "usable_asset" = the image IS content (photo, illustration, icon, texture) meant to appear in the final design. "style_reference" = the image shows a vibe, layout, color scheme, or pattern to draw from, not embed literally. When ambiguous, default to "style_reference". If the use case mentions using the images in the design, bias toward "usable_asset".
 - direction_summary must synthesize anti-patterns into one positioning statement with contrast.
 - theme_recommendation: Pick the library that best matches the extracted aesthetic. Use the LIBRARY CATALOG below. You can combine a base with add-on libraries (e.g. "shadcn + aceternity-ui"). component_notes should describe which component patterns to use (e.g. "ghost buttons, bordered cards, horizontal tab navigation") and which to avoid, grounded in what the observations show.
 
