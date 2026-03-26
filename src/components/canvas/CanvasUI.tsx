@@ -4,10 +4,10 @@
 // Manages DNA panel visibility based on frame selection.
 // Reference: grain-prd.md Section 11.3
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useEditor, useValue } from 'tldraw'
 import { OrganizeButton } from './OrganizeButton'
-import { SelectionActionBar } from './SelectionActionBar'
+import { AIActionBar } from './AIActionBar'
 import { DNAPanelV2 } from '../dna/DNAPanelV2'
 
 interface CanvasUIProps {
@@ -18,7 +18,6 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
   const editor = useEditor()
   const [activeBoardName, setActiveBoardName] = useState<string | null>(null)
   const [panelVisible, setPanelVisible] = useState(false)
-  // Keep track of last board name so the panel stays mounted when hidden
   const lastBoardName = useRef<string | null>(null)
 
   // Watch for selection changes reactively
@@ -40,18 +39,32 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
         return
       }
     }
-    // Nothing selected (clicked empty canvas) — hide the panel but keep it mounted
+    // Nothing selected — hide the panel but keep it mounted
     if (selectedShapes.length === 0) {
       setPanelVisible(false)
     }
   }, [selectedShapes])
+
+  // Callback for AI to trigger DNA extraction
+  const handleExtractDna = useCallback(() => {
+    const selected = editor.getSelectedShapes()
+    const frame = selected.find((s) => s.type === 'frame')
+    if (frame) {
+      const name = (frame.props as { name?: string }).name
+      if (name) {
+        setActiveBoardName(name)
+        lastBoardName.current = name
+        setPanelVisible(true)
+      }
+    }
+  }, [editor])
 
   const boardToRender = activeBoardName || lastBoardName.current
 
   return (
     <>
       <OrganizeButton canvasId={canvasId} />
-      <SelectionActionBar canvasId={canvasId} />
+      <AIActionBar canvasId={canvasId} onExtractDna={handleExtractDna} />
       {boardToRender && (
         <div style={{ display: panelVisible ? 'contents' : 'none' }}>
           <DNAPanelV2
