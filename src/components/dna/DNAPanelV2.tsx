@@ -388,6 +388,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
                     dna={dna}
                     useCase={useCase}
                     boardId={boardId}
+                    imageUrls={imageUrls}
                   />
                 </div>
               </ScrollArea>

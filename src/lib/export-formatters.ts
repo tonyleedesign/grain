@@ -13,22 +13,26 @@ export function formatForCodeTools(
   useCase?: string
 ): string {
   if (medium === 'web') {
-    return formatWebSkill(dna as WebAppDNA, useCase)
+    const webDna = dna as WebAppDNA
+    return [
+      formatReadme(webDna, useCase),
+      formatStyle(webDna),
+      formatComposition(webDna),
+    ].join('\n---\n\n')
   }
   return formatImageGenSkill(dna as ImageGenDNA, useCase)
 }
 
-function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
+export function formatReadme(dna: WebAppDNA, useCase?: string): string {
   const sections: string[] = []
 
-  // Identity
   sections.push(`# Design Direction: ${dna.board_name}`)
   sections.push('')
   sections.push(`> ${dna.direction_summary}`)
   sections.push('')
+  sections.push(`> **Priority: EXACT** — This file defines the project contract. style.md, composition.md, and assets.md support it. If files conflict, this one wins.`)
+  sections.push('')
 
-
-  // Project instructions (generated from use case)
   if (dna.project_instructions) {
     sections.push(`## Project Instructions`)
     const summary = dna.project_instructions.project_summary || useCase
@@ -58,22 +62,48 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
       sections.push('')
     }
   }
+
+  // Decision Sheet — hard answers to reduce builder inference
+  sections.push(`## Decision Sheet`)
+  if (dna.theme_recommendation) {
+    sections.push(`- **Stack:** Required. Use ${dna.theme_recommendation.library}${dna.theme_recommendation.theme_preset ? ` with ${dna.theme_recommendation.theme_preset} preset` : ''}. Do not substitute without justifying first.`)
+  }
+  const projectSummary = dna.project_instructions?.project_summary || useCase
+  if (projectSummary) {
+    sections.push(`- **Content:** Use real data where the subject is identifiable. If the subject is unfamiliar, research it before building. Use real facts, real imagery, and real content where possible — placeholder copy will weaken the result.`)
+  } else {
+    sections.push(`- **Content:** Styled placeholder content is acceptable for this project.`)
+  }
+  sections.push(`- **Images:** Reference images are provided in assets.md. Images marked as \`usable_asset\` may appear directly in the final build. Images marked as \`style_reference\` inform the design direction only — do not embed them literally. For images beyond the provided assets, source from open-source image libraries (Unsplash, Pexels, etc.). Use real photography that matches the project's visual direction — do not use AI-generated placeholder images.`)
+  sections.push('')
+
+  // Non-Negotiables — derived from strongest DNA signals, stated as hard rules
+  const nonNegotiables: string[] = []
+  if (dna.theme_recommendation) {
+    nonNegotiables.push(`Must use ${dna.theme_recommendation.library}${dna.theme_recommendation.theme_preset ? ` ${dna.theme_recommendation.theme_preset}` : ''}`)
+  }
+  if (dna.image_treatment?.treatment?.length) {
+    nonNegotiables.push(`Must keep ${dna.image_treatment.treatment.join(', ')} image treatment`)
+  }
+  for (const ap of dna.anti_patterns.slice(0, 3)) {
+    nonNegotiables.push(`Must not drift into: ${ap.not_that}`)
+  }
+  if (nonNegotiables.length > 0) {
+    sections.push(`## Non-Negotiables`)
+    for (const rule of nonNegotiables) {
+      sections.push(`- ${rule}`)
+    }
+    sections.push('')
+  }
+
   if (dna.positioning) {
     sections.push(`## Positioning`)
     sections.push(dna.positioning)
     sections.push('')
   }
-  if (dna.creative_direction?.length) {
-    sections.push(`## Creative Direction`)
-    for (const cd of dna.creative_direction) {
-      sections.push(`**${cd.section}**`)
-      sections.push(cd.direction)
-      sections.push('')
-    }
-  }
-  // Theme recommendation
+
   if (dna.theme_recommendation) {
-    sections.push(`## Theme`)
+    sections.push(`## Required Stack`)
     sections.push(`**Library:** ${dna.theme_recommendation.library}`)
     if (dna.theme_recommendation.theme_preset) {
       sections.push(`**Preset:** ${dna.theme_recommendation.theme_preset}`)
@@ -82,35 +112,10 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
     sections.push('')
     sections.push(`**Components:** ${dna.theme_recommendation.component_notes}`)
     sections.push('')
-    // Generate shadcn CSS variables from DNA tokens
-    if (!dna.theme_recommendation.theme_preset) {
-      sections.push('**CSS Variables (shadcn theme):**')
-      sections.push('```css')
-      sections.push(generateShadcnTheme(dna.color_palette.colors, dna.border_radius))
-      sections.push('```')
-      sections.push('')
-    }
-  }
-
-  // Composition & Layout
-  if (dna.composition_layout) {
-    sections.push(`## Composition & Layout`)
-    sections.push(`**Page archetype:** ${dna.composition_layout.page_archetype}`)
-    sections.push(`**Structure:** ${dna.composition_layout.structure}`)
-    sections.push(`**Spatial rules:** ${dna.composition_layout.spatial_rules}`)
-    sections.push(`**Responsive:** ${dna.composition_layout.responsive_notes}`)
+    sections.push(`Use this stack. If you have a strong reason to deviate, justify the alternative before building — do not silently substitute.`)
     sections.push('')
   }
 
-  // Design thinking - attitude, not just tokens
-  sections.push(`## Design Thinking`)
-  sections.push(`**Mood:** ${dna.mood_tags.join(' | ')}`)
-  sections.push(`**Palette relationship:** ${dna.color_palette.relationship}`)
-  sections.push(`**Spatial feel:** ${dna.spacing_density} density, ${dna.shadow_style} shadows, ${dna.border_radius}px radius`)
-  sections.push('')
-  sections.push('')
-
-  // Anti-patterns from DNA (personalized)
   sections.push(`## Direction Boundaries`)
   sections.push(`These are guardrails that keep the work aligned. Favor the first quality and avoid drifting into the second:`)
   sections.push('')
@@ -120,8 +125,39 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   }
   sections.push('')
 
-  // Color system - literal values
+  sections.push(`## Mood`)
+  sections.push(dna.mood_tags.join(' | '))
+  sections.push('')
+
+  sections.push(`## Implementation`)
+  sections.push(`Implement the exported values as reusable tokens, not one-off hardcoded styles. Match implementation complexity to the direction - do not default to generic component patterns that flatten the aesthetic.`)
+  sections.push('')
+
+  return sections.join('\n')
+}
+
+function buildGoogleFontsUrl(dna: WebAppDNA): string {
+  const displayFamily = dna.typography.display.family.replace(/ /g, '+')
+  const bodyFamily = dna.typography.body.family.replace(/ /g, '+')
+  const displayWeight = dna.typography.display.weight
+  const bodyWeight = dna.typography.body.weight
+  if (displayFamily === bodyFamily) {
+    return `https://fonts.googleapis.com/css2?family=${displayFamily}:wght@${displayWeight};${bodyWeight}&display=swap`
+  }
+  return `https://fonts.googleapis.com/css2?family=${displayFamily}:wght@${displayWeight}&family=${bodyFamily}:wght@${bodyWeight}&display=swap`
+}
+
+export function formatStyle(dna: WebAppDNA): string {
+  const sections: string[] = []
+
+  sections.push(`# Style Tokens: ${dna.board_name}`)
+  sections.push('')
+  sections.push(`> **Priority: EXACT** — These are implementation tokens. Apply them exactly as specified. Do not approximate or substitute.`)
+  sections.push('')
+
   sections.push(`## Color System`)
+  sections.push(`**Palette relationship:** ${dna.color_palette.relationship}`)
+  sections.push('')
   sections.push('```css')
   sections.push(':root {')
   for (const color of dna.color_palette.colors) {
@@ -143,7 +179,6 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   }
   sections.push('')
 
-  // Typography - with implementation guidance
   sections.push(`## Typography`)
   sections.push(`**Display:** ${dna.typography.display.family} (${dna.typography.display.weight}, ${dna.typography.display.classification})`)
   sections.push(`**Body:** ${dna.typography.body.family} (${dna.typography.body.weight}, ${dna.typography.body.classification})`)
@@ -159,15 +194,20 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
   sections.push('')
   sections.push(`Display font is for headlines and hero text only. Body font handles everything else. Never swap them. Never use a third font.`)
   sections.push('')
+  sections.push(`Load both fonts from Google Fonts:`)
+  sections.push('```')
+  sections.push(`@import url('${buildGoogleFontsUrl(dna)}');`)
+  sections.push('```')
+  sections.push('')
+  sections.push(`If the display font fails to load, the fallback must preserve the classification — substitute another ${dna.typography.display.classification}, not a generic sans-serif.`)
+  sections.push('')
 
-  // Spatial rules
   sections.push(`## Spatial Rules`)
   sections.push(`- **Border radius:** ${dna.border_radius}px - apply consistently to cards, buttons, inputs. 0 = brutalist, 8-12 = professional, 16+ = friendly.`)
   sections.push(`- **Density:** ${dna.spacing_density} - ${dna.spacing_density === 'compact' ? 'tight gaps (4-8px), dense information' : dna.spacing_density === 'comfortable' ? 'balanced gaps (12-16px), breathing room' : 'generous gaps (24-32px), lots of whitespace'}`)
   sections.push(`- **Shadows:** ${dna.shadow_style} - ${dna.shadow_style === 'none' ? 'no box-shadows, use borders or color contrast for depth' : dna.shadow_style === 'subtle' ? 'barely visible shadows (0 1px 3px rgba(0,0,0,0.06))' : dna.shadow_style === 'layered' ? 'stacked shadows for realistic depth (multiple shadow values)' : 'prominent shadows that lift elements off the page'}`)
   sections.push('')
 
-  // Texture & surface
   if (dna.texture) {
     sections.push(`## Texture & Surface`)
     sections.push(`**Surface feel:** ${dna.texture.surface_feel}`)
@@ -176,7 +216,45 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
     sections.push('')
   }
 
-  // Motion & animation
+  if (dna.theme_recommendation && !dna.theme_recommendation.theme_preset) {
+    sections.push('## Generated Theme (shadcn)')
+    sections.push('```css')
+    sections.push(generateShadcnTheme(dna.color_palette.colors, dna.border_radius))
+    sections.push('```')
+    sections.push('')
+  }
+
+  return sections.join('\n')
+}
+
+export function formatComposition(dna: WebAppDNA): string {
+  const sections: string[] = []
+
+  sections.push(`# Composition: ${dna.board_name}`)
+  sections.push('')
+  sections.push(`> **Priority: DIRECTIONAL** — This is creative direction. Use your judgment within these boundaries. Layout decisions, section transitions, and motion choreography are yours to determine — but stay within the described feel.`)
+  sections.push('')
+
+  if (dna.composition_layout) {
+    sections.push(`## Layout`)
+    sections.push(`**Page archetype:** ${dna.composition_layout.page_archetype}`)
+    sections.push(`**Structure:** ${dna.composition_layout.structure}`)
+    sections.push(`**Spatial rules:** ${dna.composition_layout.spatial_rules}`)
+    sections.push(`**Responsive:** ${dna.composition_layout.responsive_notes}`)
+    sections.push('')
+    sections.push(`Sections may be full-width, boxed, overlapping, or nested — choose what fits the archetype above. Maintain visual consistency in navigation and typography across sections, but allow deliberate variation in background treatment, density, and composition between sections.`)
+    sections.push('')
+  }
+
+  if (dna.creative_direction?.length) {
+    sections.push(`## Creative Direction`)
+    for (const cd of dna.creative_direction) {
+      sections.push(`**${cd.section}**`)
+      sections.push(cd.direction)
+      sections.push('')
+    }
+  }
+
   if (dna.motion) {
     sections.push(`## Motion & Animation`)
     const levelGuide: Record<string, string> = {
@@ -191,7 +269,6 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
     sections.push('')
   }
 
-  // Image direction
   if (dna.image_treatment) {
     sections.push(`## Image Direction`)
     const roleGuide: Record<string, string> = {
@@ -215,9 +292,60 @@ function formatWebSkill(dna: WebAppDNA, useCase?: string): string {
     sections.push('')
   }
 
-  sections.push(`## Implementation`)
-  sections.push(`Implement the exported values as reusable tokens, not one-off hardcoded styles. Match implementation complexity to the direction - do not default to generic component patterns that flatten the aesthetic.`)
+  return sections.join('\n')
+}
+
+export function getImageExtension(url: string): string {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase()
+    if (pathname.endsWith('.png')) return 'png'
+    if (pathname.endsWith('.webp')) return 'webp'
+    if (pathname.endsWith('.gif')) return 'gif'
+    if (pathname.endsWith('.svg')) return 'svg'
+  } catch {
+    // fall through
+  }
+  return 'jpg' // default
+}
+
+export function formatAssets(
+  dna: WebAppDNA,
+  imageUrls: string[],
+  checkedIndices: number[]
+): string {
+  if (checkedIndices.length === 0) return ''
+
+  const sections: string[] = []
+  sections.push(`# Assets: ${dna.board_name}`)
   sections.push('')
+  sections.push(`> **Priority: EXACT** — These are required reference assets. Incorporate them into the build as specified. Do not generate placeholder images when these references are provided.`)
+  sections.push('')
+  sections.push(`You MUST incorporate these references into the final build. For global-scope images, let them influence the overall site framing and design language. For section-scope images, apply them to the specific sections noted in their usage description.`)
+  sections.push('')
+
+  const globalKeywords = ['hero', 'overall', 'site-wide', 'framing', 'global', 'whole', 'entire', 'general']
+
+  for (let pos = 0; pos < checkedIndices.length; pos++) {
+    const idx = checkedIndices[pos]
+    if (idx < 0 || idx >= imageUrls.length) continue
+
+    const ext = getImageExtension(imageUrls[idx])
+    const filename = `asset-${pos + 1}.${ext}`
+
+    const role = dna.image_roles?.find(r => r.image_index === idx)
+    const description = role?.description || 'Reference image'
+    const roleLabel = role?.role === 'usable_asset' ? 'Usable asset' : 'Style reference'
+    const descLower = description.toLowerCase()
+    const isGlobal = globalKeywords.some(kw => descLower.includes(kw))
+    const scopeLabel = isGlobal ? 'Global — influences overall site framing' : 'Section — applies to specific sections noted in usage'
+
+    sections.push(`### ${filename}`)
+    sections.push(`**Role:** ${roleLabel}`)
+    sections.push(`**Scope:** ${scopeLabel}`)
+    sections.push(`**Usage:** ${description}`)
+    sections.push(`![${description}](${filename})`)
+    sections.push('')
+  }
 
   return sections.join('\n')
 }

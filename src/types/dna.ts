@@ -30,6 +30,12 @@ export interface PatternEvidence {
   conflict?: string     // optional: what this image disagrees on, e.g. "warmer palette than others"
 }
 
+export interface ImageRole {
+  image_index: number
+  role: 'usable_asset' | 'style_reference'
+  description: string
+}
+
 // --- Web/App DNA ---
 
 export interface WebAppDNA {
@@ -90,6 +96,7 @@ export interface WebAppDNA {
   direction_summary: string                        // max 15 words
   evidence: PatternEvidence[]                      // 3-5 items
   reasoning?: DNAReasoning                         // Two-pass reasoning trace
+  image_roles?: ImageRole[]
 }
 
 // --- Image Gen DNA ---

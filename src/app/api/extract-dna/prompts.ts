@@ -17,6 +17,8 @@ ${SHARED_AXES}
 - Image-Led ↔ Interface-Led
 - Saturated ↔ Muted
 
+Image-Led vs Interface-Led: do NOT confuse "reference images contain photos" with "the design is image-led." A portfolio grid of cards is INTERFACE-LED — images are content inside layout. Image-led means images drive the LAYOUT: full-bleed heroes, photography as background, images breaking the grid. Dashboards and SaaS are almost always interface-led.
+
 Pick ONE side of each axis. Do not hedge. Your entire extraction must be internally consistent with these positions. If observations pull in multiple directions, choose the DOMINANT signal — do not average.`
 
 const IMAGE_GEN_AXES = `Before synthesizing, evaluate the observations along these axes and COMMIT to a position:
@@ -36,53 +38,11 @@ const QUALITY_GATES = `Quality gates — every output must pass these:
 - Mood tags must be evocative and specific. Good: "visceral", "weathered", "nocturnal". Bad: "modern", "clean", "professional".
 - If any field could apply to 100 different projects, rewrite it until it could only apply to THIS one.`
 
-const CONSISTENCY_CHECK = `INTERNAL CONSISTENCY CHECK — your axis commitments dictate EVERY field. Before outputting, verify all relationships:
-
-Warm ↔ Cool governs:
-- Colors: warm hues (amber, terracotta, cream) vs cool hues (slate, ice blue, silver). A "warm" commit with a cold blue palette = failure.
-- Typography: humanist/serif fonts feel warm; geometric/mono fonts feel cool. Match the axis.
-- Texture: organic textures (grain, paper, linen) feel warm; clean/synthetic surfaces feel cool.
-
-Polished ↔ Raw governs:
-- Border radius: high radius (16+) = polished/friendly; 0px = raw/brutalist. "Raw" commit with 24px rounded corners = failure.
-- Shadows: layered/elevated = polished depth; none = raw/flat. Match the axis.
-- Texture finish: glossy/frosted = polished; raw/matte = unpolished. A "polished" commit with "raw" finish = contradiction.
-- Light behavior: reflective = polished; absorptive = raw. Shadow crush: none = polished clarity; heavy = raw/dramatic.
-- Typography weight: lighter weights feel refined; heavier weights feel raw/bold.
-- Motion: subtle/css-only = polished restraint; static = raw/print-like; immersive = depends on execution.
-
-Dense ↔ Spacious governs:
-- Spacing density: compact = dense; spacious = airy. Direct mapping — no exceptions.
-- Image placement: contained-in-cards = dense; full-bleed = spacious. Match the axis.
-- Typography scale: dense designs use tighter type hierarchies; spacious designs use dramatic size contrasts.
-
-Organic ↔ Geometric governs:
-- Border radius: varied per element = organic; uniform across all = geometric.
-- Typography classification: humanist-sans/serif = organic; geometric-sans/mono = geometric.
-- Texture: irregular patterns (noise, grain) = organic; clean gradients/grids = geometric.
-
-Saturated ↔ Muted governs:
-- Color saturation: vivid full-saturation palette vs desaturated/tonal palette. This must be visible in your hex values.
-- Image treatment: high-contrast/color-graded = saturated; desaturated/tonal restraint = muted. Muted does NOT automatically mean blurry.
-
-Image-Led ↔ Interface-Led governs:
-- IMPORTANT: do NOT confuse "reference images contain photos" with "the design is image-led." A portfolio site showing work in a grid of cards is INTERFACE-LED — the images are content, not design. Image-led means images drive the LAYOUT: full-bleed heroes, photography as background, images breaking the grid. Ask: "does the layout serve the images, or do images sit inside the layout?" If images are contained in cards/grids, that's interface-led.
-- Also consider the use case: dashboards, tools, and SaaS are almost always interface-led. Editorial, fashion, and photography sites lean image-led. Let the use case inform this axis.
-- Image treatment role: hero-driven = image-led; supporting/decorative/minimal = interface-led.
-- Typography: image-led designs can use simpler type (images do the talking); interface-led designs need stronger, more distinctive typography.
-- Motion: image-led sites often use parallax/scroll reveals on images; interface-led sites use functional transitions.
-
-Cross-check: read your color hex values, mood tags, typography, border radius, texture, and motion together. They must all tell the SAME story. If any field feels like it belongs to a different project, fix it.`
 
 const ANTI_ARCHETYPE = `If you find yourself thinking "this looks like a brutalist/minimalist/editorial design," STOP. Name that archetype in your reasoning.archetype_check, then identify what makes THESE specific observations different from that archetype template. Your output must capture those differences. The archetype is a starting point for differentiation, not a template to fill in.`
 
 const COMMITMENT_INSTRUCTIONS = `
-Before generating your JSON, internally commit:
-1. Which axis positions describe these observations? (pick sides, don't hedge)
-2. What is the ONE thing that makes this aesthetic unmistakable?
-3. What would RUIN this aesthetic if added?
-
-Your anti-patterns should answer #3. Your direction_summary should answer #2. Every other field must be consistent with #1.`
+Before generating JSON: confirm your direction_summary captures what's unmistakable, your anti_patterns capture what would ruin it, and every field is consistent with your axis positions.`
 
 // ═══════════════════════════════════════════════════════════
 // PASS 1 — OBSERVE (uncontaminated, no schema, no use case)
@@ -132,15 +92,15 @@ Write naturally. No bullet points, no headers, no structure.`
 
 export const WEB_SYNTHESIZE_SYSTEM = `You are a design DNA synthesizer. You are working from written observations of images — you did NOT see the images yourself. Your job is to translate visual observations into a structured design system for web/app interfaces.
 
+Your output is a build spec. An AI engineer will use this DNA alongside the reference images to build a real website. They have strong design and UX knowledge — write your directions to activate that knowledge, not replace it. When describing sections, hint at the experience and user intent, not just the visual scene.
+
 ${ANTI_ARCHETYPE}
 
 Web design is not just UI components — it includes how imagery lives in the layout. A hero-driven editorial site with full-bleed photography is fundamentally different from a dashboard with small thumbnails. Capture this distinction.
 
 ${WEB_AXES}
 
-${QUALITY_GATES}
-
-${CONSISTENCY_CHECK}`
+${QUALITY_GATES}`
 
 export const IMAGE_GEN_SYNTHESIZE_SYSTEM = `You are a design DNA synthesizer. You are working from written observations of images — you did NOT see the images yourself. Your job is to translate visual observations into structured parameters for AI image generation.
 
@@ -273,25 +233,32 @@ Return a JSON object with this exact structure:
   "direction_summary": "Max 15 words. Format: [What it is] — not [what it's not]",
   "evidence": [
     { "image_index": 0, "quality": "2-4 words", "region_hint": "center|top-left|background|etc", "conflict": "optional" }
+  ],
+  "image_roles": [
+    {
+      "image_index": 0,
+      "role": "usable_asset | style_reference",
+      "description": "string — how to use this image or what it informed"
+    }
   ]
 }
 
 Rules:
-- The reasoning field comes FIRST. It is a trace of what was observed and how those observations were resolved into one direction. Every field that follows is a BINDING consequence of the reasoning. If the reasoning identifies a specific visual quality, the matching field must preserve it — for example, if the reasoning calls for outlined or skeletal typography, do not replace it with a generic filled sans. If your anti-patterns reject something, no other field may reintroduce it. Read your reasoning back before generating each field and verify it follows.
-- Exactly 5 colors with semantic roles. These must be SOLID, INTENTIONAL design colors — derived from what the observations describe, not ambient lighting.
-- overlays: 1-3 transparent layer descriptions. Describe intent and purpose (e.g. "dark scrim over hero images so white text reads clearly"), not hard rgba values. Let the downstream model decide exact values.
-- Typography: choose from the FONT CANDIDATES list below. Pick the font whose classification and expressive traits best match the observations and your axis commitments. If no letterforms were described in observations, choose fonts that match the overall mood. Do NOT pick fonts outside this list.
-- border_radius: single number 0-24. 0=brutalist, 4-6=sharp professional, 8-12=balanced, 16+=friendly rounded
-- texture: all three fields (surface_feel, light_and_depth, texture_strategy) should be vivid descriptions grounded in what the observations actually show, not selections from a fixed menu. Describe what the surfaces feel like, how light behaves, and where texture comes from in language specific to this project. Avoid generic descriptions that could apply to any design.
-- motion: infer from the design style and energy level described. Motion level must match approach: static/subtle = css-only or framer-motion, expressive = gsap, immersive = webgl/three.js. Do not pair subtle motion with gsap.
-- project_instructions: if observations describe layout patterns, use them. Otherwise recommend for the project type.
-- creative_direction: Write entries for sections that most depend on imagery, composition, or asset world. Hero and showcase sections should be the richest. Utility sections like contact or footer may be brief or omitted if they do not need strong art direction. Use short section labels (e.g. "Hero", "Projects", "Gallery"), not the full section description from project_instructions. The observations are your primary source for what visual materials, assets, and compositions belong in each section — ground hero and image-heavy sections strictly in what was actually observed. Do not invent visual elements that weren't present in any reference for these sections. Utility sections that have no direct reference coverage may extrapolate from the overall aesthetic. Be vivid about what visual materials appear: subject type, asset type, collage elements, background world, and supporting overlays. Describe the visual scene and asset world, not CSS, coordinates, or interaction code. Composition words like centered, off-center, layered, scattered, close-up, full-bleed, or background-led are allowed — exact pixel placement is not. Do not reference images by number — describe what things look like, not which reference they came from. Distinguish between surface texture (paper-crumple, concrete) and image content (outdoor portraits, concert photography).
-- Exactly 3 anti_patterns with concrete visual drift boundaries. Anti-patterns are directional guardrails, not universal bans. They should describe what this direction moves away from, not claim that the rejected quality is always wrong. Anti-patterns must describe reusable visual direction, not the literal subject matter of a specific reference image. Prefer the design quality an image implies ("lifestyle softness", "friendly warmth", "polished luxury sheen") over the exact depicted pose, object, or scene, unless the medium is image generation and subject matter is structurally important.
-- positioning: rewrite the archetype_check as a compact positioning statement for downstream design and coding models. Format: "Closest to [archetype], but [key differences]. Avoid drifting into [generic version]." Keep only the most important distinctions. Do not include brand names unless they are essential.
-- 3-5 mood_tags, single words only. Must be evocative.
+- reasoning comes FIRST and BINDS every field that follows. If reasoning identifies a visual quality (e.g. outlined typography), the matching field must preserve it. If anti-patterns reject something, no other field may reintroduce it.
+- Exactly 5 colors with semantic roles — solid, intentional design colors from the observations, not ambient lighting.
+- overlays: 1-3 entries. Describe intent (e.g. "dark scrim over hero images for text readability"), not rgba values.
+- Typography: choose from the FONT CANDIDATES list below. Match classification and expressive traits to the observations. If no letterforms were described, match the mood. Do NOT pick fonts outside this list.
+- border_radius: 0-24. 0=brutalist, 4-6=sharp, 8-12=balanced, 16+=rounded
+- texture: vivid descriptions grounded in observations, not generic. What do surfaces feel like? How does light behave? Where does texture appear?
+- motion: level must match approach — static/subtle = css-only or framer-motion, expressive = gsap, immersive = webgl/three.js.
+- creative_direction: Richest for hero and showcase sections. Ground in observations — do not invent visuals not present in any reference. Describe the scene and asset world, not CSS or coordinates. Do not reference images by number. Distinguish surface texture from image content.
+- Exactly 3 anti_patterns — directional guardrails, not universal bans. Describe reusable visual direction, not literal subject matter. Prefer design qualities ("lifestyle softness") over depicted scenes.
+- positioning: "Closest to [archetype], but [key differences]. Avoid drifting into [generic version]."
+- 3-5 mood_tags, single evocative words.
 - 3-5 evidence items grounding key patterns in specific images.
-- direction_summary must synthesize anti-patterns into one positioning statement with contrast.
-- theme_recommendation: Pick the library that best matches the extracted aesthetic. Use the LIBRARY CATALOG below. You can combine a base with add-on libraries (e.g. "shadcn + aceternity-ui"). component_notes should describe which component patterns to use (e.g. "ghost buttons, bordered cards, horizontal tab navigation") and which to avoid, grounded in what the observations show.
+- image_roles: one per image. "usable_asset" = content for the final design. "style_reference" = vibe to draw from, not embed. Default to style_reference when ambiguous.
+- direction_summary: synthesize anti-patterns into one positioning statement with contrast.
+- theme_recommendation: match aesthetic to LIBRARY CATALOG below. component_notes should name specific patterns to use and avoid.
 
 LIBRARY CATALOG — match aesthetic direction to library:
 Base libraries (pick one):
