@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Copy, Check, FileText, Sparkles, Download } from 'lucide-react'
 import type { Medium, WebAppDNA, ImageGenDNA } from '@/types/dna'
 import { formatForCodeTools, formatForMidjourney, formatReadme, formatStyle, formatComposition, formatAssets } from '@/lib/export-formatters'
@@ -100,6 +100,14 @@ function WebExportView({ dna, useCase, boardId, imageUrls }: {
       return role?.role === 'usable_asset'
     })
   })
+
+  // Reset when DNA is regenerated or images change
+  useEffect(() => {
+    setCheckedImages(imageUrls.map((_, i) => {
+      const role = dna.image_roles?.find(r => r.image_index === i)
+      return role?.role === 'usable_asset'
+    }))
+  }, [dna.image_roles, imageUrls])
 
   const checkedIndices = useMemo(
     () => checkedImages.reduce<number[]>((acc, checked, i) => checked ? [...acc, i] : acc, []),

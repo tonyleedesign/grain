@@ -262,12 +262,12 @@ export function formatAssets(
   sections.push(`These images are reference assets for building this design. Use them as directed.`)
   sections.push('')
 
-  for (const idx of checkedIndices) {
+  for (let pos = 0; pos < checkedIndices.length; pos++) {
+    const idx = checkedIndices[pos]
     if (idx < 0 || idx >= imageUrls.length) continue
 
-    const assetNum = checkedIndices.indexOf(idx) + 1
     const ext = getImageExtension(imageUrls[idx])
-    const filename = `asset-${assetNum}.${ext}`
+    const filename = `asset-${pos + 1}.${ext}`
 
     const role = dna.image_roles?.find(r => r.image_index === idx)
     const description = role?.description || 'Reference image'

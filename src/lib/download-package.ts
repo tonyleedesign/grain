@@ -4,25 +4,31 @@
 import type { WebAppDNA } from '@/types/dna'
 import { formatReadme, formatStyle, formatComposition, formatAssets, getImageExtension } from './export-formatters'
 
-function downloadMarkdown(filename: string, content: string) {
-  const blob = new Blob([content], { type: 'text/markdown' })
+function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
   a.click()
-  URL.revokeObjectURL(url)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function downloadMarkdown(filename: string, content: string) {
+  downloadBlob(filename, new Blob([content], { type: 'text/markdown' }))
 }
 
 async function downloadImage(filename: string, imageUrl: string) {
-  const response = await fetch(imageUrl)
-  const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    const response = await fetch(imageUrl)
+    if (!response.ok) {
+      console.warn(`Failed to download ${filename}: ${response.status}`)
+      return
+    }
+    const blob = await response.blob()
+    downloadBlob(filename, blob)
+  } catch (err) {
+    console.warn(`Failed to download ${filename}:`, err)
+  }
 }
 
 function delay(ms: number) {
@@ -60,11 +66,11 @@ export async function downloadPackage(opts: {
     }
 
     // Download actual image files
-    for (const idx of checkedIndices) {
+    for (let pos = 0; pos < checkedIndices.length; pos++) {
+      const idx = checkedIndices[pos]
       if (idx < 0 || idx >= imageUrls.length) continue
-      const assetNum = checkedIndices.indexOf(idx) + 1
       const ext = getImageExtension(imageUrls[idx])
-      await downloadImage(`asset-${assetNum}.${ext}`, imageUrls[idx])
+      await downloadImage(`asset-${pos + 1}.${ext}`, imageUrls[idx])
       await delay(100)
     }
   }
