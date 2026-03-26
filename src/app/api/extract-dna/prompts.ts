@@ -214,7 +214,7 @@ Return a JSON object with this exact structure:
       { "hex": "#hex", "role": "primary|secondary|accent|dark|light" }
     ],
     "overlays": [
-      { "rgba": "rgba(r, g, b, alpha)", "use": "what this transparent layer does" }
+      { "intent": "describe what this transparent layer does and why, not rgba values" }
     ],
     "relationship": "4 words max describing how colors relate"
   },
@@ -226,16 +226,9 @@ Return a JSON object with this exact structure:
   "spacing_density": "compact|comfortable|spacious",
   "shadow_style": "none|subtle|layered|elevated",
   "texture": {
-    "background": ["2-4 keywords"],
-    "finish": "matte|glossy|frosted|raw",
-    "light_behavior": "absorptive|reflective|mixed",
-    "shadow_crush": "none|moderate|heavy",
-    "primary_texture": {
-      "family": "film-grain|halftone|photocopy-noise|scan-noise|paper-fiber|asphalt-grit|compression-artifacts|none",
-      "intensity": "subtle|moderate|heavy",
-      "application": "image-only|background-only|surface-only|global",
-      "rationale": "Short phrase explaining why this texture belongs"
-    }
+    "surface_feel": "Describe what surfaces feel like — material quality, tactility, sheen. Grounded in observations.",
+    "light_and_depth": "Describe how light and shadow behave — absorptive vs reflective, crushed blacks vs open tonal range.",
+    "texture_strategy": "Describe what creates texture, where it appears, and what stays clean. Be specific to this project, not generic."
   },
   "motion": {
     "level": "static|subtle|expressive|immersive",
@@ -260,6 +253,18 @@ Return a JSON object with this exact structure:
       "direction": "Scene description: what visual materials appear, what the composition feels like, what kind of assets belong here. Vivid enough that a developer who has never seen the reference images can build it."
     }
   ],
+  "theme_recommendation": {
+    "library": "Pick from the LIBRARY CATALOG below. Can combine shadcn with add-on libraries (e.g. 'shadcn + aceternity-ui').",
+    "theme_preset": "For DaisyUI only: retro | cyberpunk | synthwave | pastel | luxury | valentine | aqua | lofi | etc. null for others.",
+    "rationale": "Why this library and theme fits the board aesthetic.",
+    "component_notes": "Which components to prioritize, which variants (ghost/outline/filled), what patterns to use or avoid."
+  },
+  "composition_layout": {
+    "page_archetype": "Describe the page type and overall organization in one vivid sentence.",
+    "structure": "How sections are organized, what dominates, grid vs freeform, section rhythm and flow.",
+    "spatial_rules": "Overlap behavior, depth layering, alignment, container discipline, whitespace role.",
+    "responsive_notes": "What must survive on small screens, what can reflow, breakpoint priorities."
+  },
   "anti_patterns": [
     { "this_is": "2-6 words", "not_that": "2-6 words" }
   ],
@@ -274,10 +279,10 @@ Return a JSON object with this exact structure:
 Rules:
 - The reasoning field comes FIRST. It is a trace of what was observed and how those observations were resolved into one direction. Every field that follows is a BINDING consequence of the reasoning. If the reasoning identifies a specific visual quality, the matching field must preserve it — for example, if the reasoning calls for outlined or skeletal typography, do not replace it with a generic filled sans. If your anti-patterns reject something, no other field may reintroduce it. Read your reasoning back before generating each field and verify it follows.
 - Exactly 5 colors with semantic roles. These must be SOLID, INTENTIONAL design colors — derived from what the observations describe, not ambient lighting.
-- overlays: 2-4 transparent layers as rgba values for readability or tonal control. Do not stack them into generic atmosphere by default.
+- overlays: 1-3 transparent layer descriptions. Describe intent and purpose (e.g. "dark scrim over hero images so white text reads clearly"), not hard rgba values. Let the downstream model decide exact values.
 - Typography: choose from the FONT CANDIDATES list below. Pick the font whose classification and expressive traits best match the observations and your axis commitments. If no letterforms were described in observations, choose fonts that match the overall mood. Do NOT pick fonts outside this list.
 - border_radius: single number 0-24. 0=brutalist, 4-6=sharp professional, 8-12=balanced, 16+=friendly rounded
-- texture: derive from surface descriptions in the observations. Name the main texture strategy, not a pile of atmospheric effects. If grain or texture is important, specify the exact primary_texture family rather than saying only "grain" or "texture". Distinguish concrete types like film-grain, halftone, photocopy-noise, scan-noise, paper-fiber, asphalt-grit, or compression-artifacts, then place them deliberately. Do not default to blur, frosted glass, grain overlays, or haze unless the observations explicitly support them.
+- texture: all three fields (surface_feel, light_and_depth, texture_strategy) should be vivid descriptions grounded in what the observations actually show, not selections from a fixed menu. Describe what the surfaces feel like, how light behaves, and where texture comes from in language specific to this project. Avoid generic descriptions that could apply to any design.
 - motion: infer from the design style and energy level described. Motion level must match approach: static/subtle = css-only or framer-motion, expressive = gsap, immersive = webgl/three.js. Do not pair subtle motion with gsap.
 - project_instructions: if observations describe layout patterns, use them. Otherwise recommend for the project type.
 - creative_direction: Write entries for sections that most depend on imagery, composition, or asset world. Hero and showcase sections should be the richest. Utility sections like contact or footer may be brief or omitted if they do not need strong art direction. Use short section labels (e.g. "Hero", "Projects", "Gallery"), not the full section description from project_instructions. The observations are your primary source for what visual materials, assets, and compositions belong in each section — ground hero and image-heavy sections strictly in what was actually observed. Do not invent visual elements that weren't present in any reference for these sections. Utility sections that have no direct reference coverage may extrapolate from the overall aesthetic. Be vivid about what visual materials appear: subject type, asset type, collage elements, background world, and supporting overlays. Describe the visual scene and asset world, not CSS, coordinates, or interaction code. Composition words like centered, off-center, layered, scattered, close-up, full-bleed, or background-led are allowed — exact pixel placement is not. Do not reference images by number — describe what things look like, not which reference they came from. Distinguish between surface texture (paper-crumple, concrete) and image content (outdoor portraits, concert photography).
@@ -286,7 +291,37 @@ Rules:
 - 3-5 mood_tags, single words only. Must be evocative.
 - 3-5 evidence items grounding key patterns in specific images.
 - direction_summary must synthesize anti-patterns into one positioning statement with contrast.
-- REJECT: sentences longer than 6 words (except direction_summary and creative_direction entries), vague adjectives, metaphors.
+- theme_recommendation: Pick the library that best matches the extracted aesthetic. Use the LIBRARY CATALOG below. You can combine a base with add-on libraries (e.g. "shadcn + aceternity-ui"). component_notes should describe which component patterns to use (e.g. "ghost buttons, bordered cards, horizontal tab navigation") and which to avoid, grounded in what the observations show.
+
+LIBRARY CATALOG — match aesthetic direction to library:
+Base libraries (pick one):
+- shadcn: Clean, minimal, professional. The safe default for SaaS, apps, dashboards.
+- heroui: Sleek, premium, Apple-inspired. Smooth animations, elegant dark mode, soft gradients.
+- mantine: Developer-centric, 120+ components. Built-in rich text editor, date pickers, spotlight search. Best for complex apps.
+- chakra-ui: Accessible, composable, slightly playful. Rounded corners, generous spacing.
+- ant-design: Enterprise, structured, data-dense. Strong tables, forms, systematic iconography.
+- daisyui: Theme-driven, 35 named presets (retro, cyberpunk, synthwave, pastel, luxury, lofi, etc.). Pure CSS, zero JS.
+- preline: Modern, airy, marketing-ready. Generous whitespace, 640+ components. Great for landing pages.
+- flowbite: Corporate-professional. Kanban boards, CRUD tables, calendars. Enterprise dashboards.
+- tremor: Data-forward, analytical. Charts, KPI cards, metric displays. Stripe-dashboard feel.
+- park-ui: Refined, editorial. Multi-framework (React, Solid, Vue). Chakra-quality outside React.
+- flyonui: DaisyUI simplicity + JavaScript interactivity. Semantic class names with real components.
+
+shadcn add-on libraries (combine with shadcn):
+- aceternity-ui: Dramatic 3D cards, spotlight effects, parallax, aurora backgrounds. Premium SaaS marketing.
+- magic-ui: Shimmer borders, orbit animations, number tickers. Playful motion accents.
+- motion-primitives: Scroll reveals, staggered lists, text animations. Tasteful, not showy.
+- animate-ui: Motion via shadcn CLI. Tight integration, installable via npx shadcn add.
+- kokonut-ui: Conversion-oriented hover states, entrance animations. Marketing/startup pages.
+- cult-ui: Curated composable components with restrained animation. Production polish.
+
+Niche aesthetics:
+- neobrutalism-components: Thick borders, hard drop shadows, saturated colors. Anti-corporate, graphic-design-influenced.
+- retroui: Neo-brutalist + retro web flavor. Playful, personality-driven.
+- 8bitcn: Pixel borders, chiptune aesthetic, NES-era UI. Gaming, indie, novelty.
+- untitled-ui-react: Figma-first premium design system. 5000+ components, systematic tokens.
+- composition_layout: All four fields should be vivid descriptions grounded in observations, not selections from a fixed menu. page_archetype names the structural shape. structure describes how sections flow and what leads. spatial_rules captures overlap, alignment, and container discipline. responsive_notes identifies what must be preserved vs what can reflow. Avoid generic descriptions that could apply to any design.
+- REJECT: sentences longer than 6 words (except direction_summary, creative_direction entries, composition_layout fields, and theme_recommendation fields), vague adjectives, metaphors.
 ${COMMITMENT_INSTRUCTIONS}
 ${fontShortlist ? `
 FONT CANDIDATES — choose display and body fonts from this list ONLY:

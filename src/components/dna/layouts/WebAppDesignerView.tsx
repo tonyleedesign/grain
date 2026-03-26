@@ -12,6 +12,8 @@ import { MotionField } from '../fields/MotionField'
 import { ImageTreatmentField } from '../fields/ImageTreatmentField'
 import { AntiPatternsField } from '../fields/AntiPatternsField'
 import { CreativeDirectionField } from '../fields/CreativeDirectionField'
+import { ThemeRecommendationField } from '../fields/ThemeRecommendationField'
+import { CompositionLayoutField } from '../fields/CompositionLayoutField'
 import { MoodTagsField } from '../fields/MoodTagsField'
 import { PatternEvidenceField } from '../fields/PatternEvidenceField'
 
@@ -39,6 +41,20 @@ export function WebAppDesignerView({ dna, imageUrls }: WebAppDesignerViewProps) 
         <>
           <Divider />
           <CreativeDirectionField creativeDirection={dna.creative_direction} />
+        </>
+      )}
+
+      {dna.theme_recommendation && (
+        <>
+          <Divider />
+          <ThemeRecommendationField themeRecommendation={dna.theme_recommendation} />
+        </>
+      )}
+
+      {dna.composition_layout && (
+        <>
+          <Divider />
+          <CompositionLayoutField compositionLayout={dna.composition_layout} />
         </>
       )}
 

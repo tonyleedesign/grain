@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:brandguide.asu.edu)",
-      "WebFetch(domain:medium.com)"
+      "WebFetch(domain:medium.com)",
+      "WebSearch",
+      "Bash(gh search:*)",
+      "mcp__github__search_repositories",
+      "Bash(curl -s https://raw.githubusercontent.com/zanwei/design-dna/main/references/generation-guide.md)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

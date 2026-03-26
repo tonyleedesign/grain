@@ -18,7 +18,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 interface WebColorPaletteProps {
   variant: 'web'
   colors: Array<{ hex: string; role: string }>
-  overlays?: Array<{ rgba: string; use: string }>
+  overlays?: Array<{ intent: string }>
   relationship: string
 }
 
@@ -77,33 +77,8 @@ export function ColorPaletteField(props: ColorPaletteFieldProps) {
           <div className="text-[10px] mb-1" style={{ color: 'var(--color-muted)' }}>Overlays</div>
           <div className="flex flex-col gap-1">
             {props.overlays.map((overlay, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div
-                        className="w-6 h-6 rounded border border-[var(--color-border)] cursor-default"
-                        style={{
-                          background: `linear-gradient(45deg, #808080 25%, transparent 25%, transparent 75%, #808080 75%), linear-gradient(45deg, #808080 25%, transparent 25%, transparent 75%, #808080 75%)`,
-                          backgroundSize: '6px 6px',
-                          backgroundPosition: '0 0, 3px 3px',
-                          position: 'relative',
-                        }}
-                      >
-                        <div
-                          className="absolute inset-0 rounded"
-                          style={{ backgroundColor: overlay.rgba }}
-                        />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <span className="font-mono text-[10px]">{overlay.rgba}</span>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <span className="text-[10px]" style={{ color: 'var(--color-text)' }}>
-                  {overlay.use}
-                </span>
+              <div key={i} className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+                {overlay.intent}
               </div>
             ))}
           </div>
