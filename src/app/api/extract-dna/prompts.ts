@@ -254,8 +254,8 @@ Return a JSON object with this exact structure:
     }
   ],
   "theme_recommendation": {
-    "library": "shadcn | shadcn + aceternity-ui | shadcn + magic-ui | shadcn + motion-primitives | daisyui | shadcn + 8bitcn",
-    "theme_preset": "For DaisyUI only: retro | cyberpunk | synthwave | pastel | luxury | valentine | aqua | lofi | etc. null for custom shadcn.",
+    "library": "Pick from the LIBRARY CATALOG below. Can combine shadcn with add-on libraries (e.g. 'shadcn + aceternity-ui').",
+    "theme_preset": "For DaisyUI only: retro | cyberpunk | synthwave | pastel | luxury | valentine | aqua | lofi | etc. null for others.",
     "rationale": "Why this library and theme fits the board aesthetic.",
     "component_notes": "Which components to prioritize, which variants (ghost/outline/filled), what patterns to use or avoid."
   },
@@ -291,7 +291,35 @@ Rules:
 - 3-5 mood_tags, single words only. Must be evocative.
 - 3-5 evidence items grounding key patterns in specific images.
 - direction_summary must synthesize anti-patterns into one positioning statement with contrast.
-- theme_recommendation: Pick the frontend library that best matches the overall aesthetic and motion level. Default to shadcn for clean/minimal/professional. Add aceternity-ui or magic-ui for animation-heavy or marketing-focused boards. Add motion-primitives for tasteful subtle motion. Use daisyui only when a named theme preset is an obvious match (retro, cyberpunk, synthwave, etc.). Use 8bitcn for pixel-art or retro-game aesthetics. component_notes should describe which component patterns to use (e.g. "ghost buttons, bordered cards, horizontal tab navigation") and which to avoid, grounded in what the observations show.
+- theme_recommendation: Pick the library that best matches the extracted aesthetic. Use the LIBRARY CATALOG below. You can combine a base with add-on libraries (e.g. "shadcn + aceternity-ui"). component_notes should describe which component patterns to use (e.g. "ghost buttons, bordered cards, horizontal tab navigation") and which to avoid, grounded in what the observations show.
+
+LIBRARY CATALOG — match aesthetic direction to library:
+Base libraries (pick one):
+- shadcn: Clean, minimal, professional. The safe default for SaaS, apps, dashboards.
+- heroui: Sleek, premium, Apple-inspired. Smooth animations, elegant dark mode, soft gradients.
+- mantine: Developer-centric, 120+ components. Built-in rich text editor, date pickers, spotlight search. Best for complex apps.
+- chakra-ui: Accessible, composable, slightly playful. Rounded corners, generous spacing.
+- ant-design: Enterprise, structured, data-dense. Strong tables, forms, systematic iconography.
+- daisyui: Theme-driven, 35 named presets (retro, cyberpunk, synthwave, pastel, luxury, lofi, etc.). Pure CSS, zero JS.
+- preline: Modern, airy, marketing-ready. Generous whitespace, 640+ components. Great for landing pages.
+- flowbite: Corporate-professional. Kanban boards, CRUD tables, calendars. Enterprise dashboards.
+- tremor: Data-forward, analytical. Charts, KPI cards, metric displays. Stripe-dashboard feel.
+- park-ui: Refined, editorial. Multi-framework (React, Solid, Vue). Chakra-quality outside React.
+- flyonui: DaisyUI simplicity + JavaScript interactivity. Semantic class names with real components.
+
+shadcn add-on libraries (combine with shadcn):
+- aceternity-ui: Dramatic 3D cards, spotlight effects, parallax, aurora backgrounds. Premium SaaS marketing.
+- magic-ui: Shimmer borders, orbit animations, number tickers. Playful motion accents.
+- motion-primitives: Scroll reveals, staggered lists, text animations. Tasteful, not showy.
+- animate-ui: Motion via shadcn CLI. Tight integration, installable via npx shadcn add.
+- kokonut-ui: Conversion-oriented hover states, entrance animations. Marketing/startup pages.
+- cult-ui: Curated composable components with restrained animation. Production polish.
+
+Niche aesthetics:
+- neobrutalism-components: Thick borders, hard drop shadows, saturated colors. Anti-corporate, graphic-design-influenced.
+- retroui: Neo-brutalist + retro web flavor. Playful, personality-driven.
+- 8bitcn: Pixel borders, chiptune aesthetic, NES-era UI. Gaming, indie, novelty.
+- untitled-ui-react: Figma-first premium design system. 5000+ components, systematic tokens.
 - composition_layout: All four fields should be vivid descriptions grounded in observations, not selections from a fixed menu. page_archetype names the structural shape. structure describes how sections flow and what leads. spatial_rules captures overlap, alignment, and container discipline. responsive_notes identifies what must be preserved vs what can reflow. Avoid generic descriptions that could apply to any design.
 - REJECT: sentences longer than 6 words (except direction_summary, creative_direction entries, composition_layout fields, and theme_recommendation fields), vague adjectives, metaphors.
 ${COMMITMENT_INSTRUCTIONS}

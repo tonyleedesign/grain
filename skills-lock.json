@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "design-dna": {
+      "source": "zanwei/design-dna",
+      "sourceType": "github",
+      "computedHash": "b9d7b4f5ab0abbaa51af983d389a947ec420ea1fede6204156c5d3f3310cdfe7"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",
