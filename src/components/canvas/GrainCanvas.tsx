@@ -11,6 +11,7 @@ import './grain-canvas.css'
 import { uploadImages } from '@/lib/uploadImages'
 import { CanvasUI } from './CanvasUI'
 import { SnapshotCardShapeUtil } from './SnapshotCardShape'
+import { AITextShapeUtil } from './AITextShape'
 
 interface GrainCanvasProps {
   canvasType: 'community' | 'private'
@@ -19,7 +20,7 @@ interface GrainCanvasProps {
 }
 
 export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasProps) {
-  const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil], [])
+  const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil, AITextShapeUtil], [])
 
   const components = useMemo<TLComponents>(
     () => ({
