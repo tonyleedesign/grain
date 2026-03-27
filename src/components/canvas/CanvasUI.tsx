@@ -67,8 +67,6 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
 
     const handleContextMenu = (e: Event) => {
       const mouseEvent = e as MouseEvent
-      if (editor.getSelectedShapes().length === 0) return
-
       mouseEvent.preventDefault()
 
       const existing = document.getElementById('grain-context-menu')

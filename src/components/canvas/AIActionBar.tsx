@@ -228,15 +228,47 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
     setShowDeleteConfirm(false)
   }, [editor])
 
-  if (!hasSelection || !barPosition) return null
+  // When nothing is selected but forceExpanded (right-click "Ask AI..."), show floating input
+  const isFloatingMode = !hasSelection && expanded
+
+  if (!hasSelection && !expanded && !isProcessing) return null
 
   // Show thinking indicator while processing
   if (isProcessing) {
-    return <AIThinkingIndicator status={thinkingStatus} />
+    if (barPosition) {
+      return <AIThinkingIndicator status={thinkingStatus} />
+    }
+    // Floating thinking indicator when no selection
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          left: '50%',
+          top: '40%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '8px 14px',
+          borderRadius: 'var(--radius-lg)',
+          backgroundColor: 'var(--color-surface)',
+          boxShadow: 'var(--shadow-toolbar)',
+          fontFamily: 'var(--font-family)',
+          fontSize: 12,
+          color: 'var(--color-muted)',
+          pointerEvents: 'none',
+        }}
+      >
+        <Sparkles size={13} style={{ color: 'var(--color-accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+        {thinkingStatus}
+        <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
+      </div>
+    )
   }
 
   // Show delete confirmation
-  if (showDeleteConfirm) {
+  if (showDeleteConfirm && barPosition) {
     return (
       <div
         style={{
@@ -304,9 +336,11 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
       ref={barRef}
       style={{
         position: 'fixed',
-        left: barPosition.x,
-        top: barPosition.y - 12,
-        transform: 'translate(-50%, -100%)',
+        ...(isFloatingMode
+          ? { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }
+          : barPosition
+            ? { left: barPosition.x, top: barPosition.y - 12, transform: 'translate(-50%, -100%)' }
+            : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }),
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
