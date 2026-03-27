@@ -12,6 +12,7 @@ import {
   T,
   RecordProps,
   useEditor,
+  useValue,
   TLShapeId,
 } from 'tldraw'
 import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from '@tldraw/tlschema'
@@ -189,6 +190,27 @@ async function sendChatMessage(
   }
 }
 
+/** Auto-enter editing mode when this shape is selected so clicks reach React content */
+function useAutoEdit(shapeId: TLShapeId) {
+  const editor = useEditor()
+  const isSelected = useValue(
+    'isSelected',
+    () => editor.getSelectedShapeIds().includes(shapeId),
+    [editor, shapeId]
+  )
+  const isEditing = useValue(
+    'isEditing',
+    () => editor.getEditingShapeId() === shapeId,
+    [editor, shapeId]
+  )
+
+  useEffect(() => {
+    if (isSelected && !isEditing) {
+      editor.setEditingShape(shapeId)
+    }
+  }, [editor, shapeId, isSelected, isEditing])
+}
+
 function SimpleMode({
   shape,
   messages,
@@ -203,8 +225,9 @@ function SimpleMode({
   const text = messages[0]?.text || ''
   const hasContent = text.length > 0
 
-  // Auto-size height to fit content
+  // Auto-size height to fit content (only in simple mode, not when switching to chat)
   useEffect(() => {
+    if (shape.props.h >= 200) return // User clicked reply — don't shrink back
     const el = contentRef.current
     if (!el || !hasContent) return
     const measured = el.scrollHeight
@@ -262,6 +285,7 @@ function ChatMode({
   isStreaming: boolean
 }) {
   const editor = useEditor()
+  useAutoEdit(shape.id as TLShapeId)
   const [inputValue, setInputValue] = useState('')
   const [isMinimized, setIsMinimized] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
@@ -442,7 +466,7 @@ export class AITextShapeUtil extends ShapeUtil<AITextShape> {
   }
 
   override canResize() { return true }
-  override canEdit() { return false }
+  override canEdit() { return true }
 
   component(shape: AITextShape) {
     const messages = getMessages(shape)
