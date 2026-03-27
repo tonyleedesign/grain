@@ -384,15 +384,17 @@ function SimpleMode({
         pointerEvents: 'all',
       }}
     >
-      {text || '\u00A0'}
+      <div className="ai-card-simple__content">{text || '\u00A0'}</div>
       {hasContent && shape.props.status === 'idle' && (
-        <button
-          className="ai-card-reply-btn"
-          title="Reply"
-          onPointerDown={handleReply}
-        >
-          <Reply size={13} />
-        </button>
+        <div className="ai-card-simple__actions">
+          <button
+            className="ai-card-reply-btn"
+            title="Reply"
+            onPointerDown={handleReply}
+          >
+            <Reply size={13} />
+          </button>
+        </div>
       )}
     </div>
   )
