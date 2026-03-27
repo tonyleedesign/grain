@@ -451,9 +451,8 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
             <Download size={14} />
           </button>
 
-          {/* AI sparkle icon — hover to expand */}
+          {/* AI sparkle icon — click to expand */}
           <button
-            onMouseEnter={() => setExpanded(true)}
             onClick={() => setExpanded(true)}
             style={{
               display: 'flex',
