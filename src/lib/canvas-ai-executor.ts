@@ -28,6 +28,7 @@ function getAIPlacement(
 
   const viewport = editor.getViewportPageBounds()
   const selection = editor.getSelectionPageBounds()
+  const selectedShapes = editor.getSelectedShapes()
 
   if (!selection) {
     return {
@@ -36,9 +37,27 @@ function getAIPlacement(
     }
   }
 
-  const preferredRightX = selection.maxX + AI_TEXT_OFFSET
-  const preferredLeftX = selection.minX - width - AI_TEXT_OFFSET
-  const preferredY = selection.minY
+  let anchorBounds = selection
+  const selectedFrames = selectedShapes.filter((shape) => shape.type === 'frame')
+
+  if (selectedFrames.length === 1) {
+    anchorBounds = editor.getShapePageBounds(selectedFrames[0]) ?? selection
+  } else if (selectedFrames.length === 0 && selectedShapes.length > 0) {
+    const parentFrameIds = [...new Set(
+      selectedShapes
+        .map((shape) => editor.getShape(shape.parentId as TLShapeId))
+        .filter((parent): parent is Exclude<typeof parent, null | undefined> => Boolean(parent && parent.type === 'frame'))
+        .map((frame) => frame.id as TLShapeId)
+    )]
+
+    if (parentFrameIds.length === 1) {
+      anchorBounds = editor.getShapePageBounds(parentFrameIds[0]) ?? selection
+    }
+  }
+
+  const preferredRightX = anchorBounds.maxX + AI_TEXT_OFFSET
+  const preferredLeftX = anchorBounds.minX - width - AI_TEXT_OFFSET
+  const preferredY = anchorBounds.minY
 
   const fitsRight = preferredRightX + width <= viewport.maxX - VIEWPORT_PADDING
   const fitsLeft = preferredLeftX >= viewport.minX + VIEWPORT_PADDING
@@ -49,7 +68,7 @@ function getAIPlacement(
   } else if (fitsLeft) {
     x = preferredLeftX
   } else {
-    const selectionAnchorX = selection.midX - width / 2
+    const selectionAnchorX = anchorBounds.midX - width / 2
     x = clamp(
       selectionAnchorX,
       viewport.minX + VIEWPORT_PADDING,
@@ -156,11 +175,11 @@ function executePlaceText(
   return { success: true, message: 'Text placed on canvas' }
 }
 
-function executeGroupImages(
+async function executeGroupImages(
   editor: Editor,
   params: { name: string },
   canvasId: string
-): ExecutionResult {
+): Promise<ExecutionResult> {
   const selected = editor.getSelectedShapes()
   const images = selected.filter((s): s is TLImageShape => {
     if (s.type !== 'image') return false
@@ -211,6 +230,19 @@ function executeGroupImages(
   const avgY = images.reduce((sum, img) => sum + img.y, 0) / images.length
 
   const frameId = createShapeId()
+  let boardId = ''
+  try {
+    const response = await fetch('/api/boards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: params.name, canvasId, frameShapeId: frameId }),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      boardId = data.id || ''
+    }
+  } catch {}
 
   editor.run(() => {
     editor.createShape({
@@ -218,6 +250,7 @@ function executeGroupImages(
       type: 'frame',
       x: avgX - frameW / 2,
       y: avgY - frameH / 2,
+      meta: boardId ? { boardId } : {},
       props: { w: frameW, h: frameH, name: params.name },
     })
 
@@ -239,13 +272,6 @@ function executeGroupImages(
     }
   })
 
-  // Save board to Supabase (fire-and-forget)
-  fetch('/api/boards', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: params.name, canvasId }),
-  }).catch((err) => console.error('Board save error:', err))
-
   editor.select(frameId)
 
   return { success: true, message: `Grouped ${images.length} images into "${params.name}"` }
@@ -264,7 +290,8 @@ async function executeRenameBoard(
   }
 
   const oldName = (frame.props as { name?: string }).name
-  if (!oldName) {
+  const boardId = (frame.meta as { boardId?: string } | undefined)?.boardId
+  if (!oldName && !boardId) {
     return { success: false, message: 'Selected board has no name' }
   }
 
@@ -273,6 +300,7 @@ async function executeRenameBoard(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       canvasId,
+      boardId,
       oldName,
       newName: params.newName,
     }),
@@ -299,7 +327,8 @@ export function createAIShape(
   editor: Editor,
   position: 'near_selection' | { x: number; y: number },
   selectionContext: string,
-  canvasId: string
+  canvasId: string,
+  boardId = ''
 ): TLShapeId {
   const width = 360
   const height = 40
@@ -322,6 +351,7 @@ export function createAIShape(
       selectionContext,
       title: '',
       canvasId,
+      boardId,
       mode: 'simple',
       status: 'waiting',
     },

@@ -18,7 +18,7 @@ import {
 } from 'tldraw'
 import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from '@tldraw/tlschema'
 import { Reply, Send, Minus, Pencil, Check } from 'lucide-react'
-import { ChatMessage, CanvasAIChatRequest, CanvasAIToolCall } from '@/types/canvas-ai'
+import { ChatMessage, CanvasAIChatRequest, CanvasAIToolCall, CanvasAISelectionContext } from '@/types/canvas-ai'
 import { buildSelectionContext } from '@/lib/selection-context'
 import { streamToShape, executeToolCalls } from '@/lib/canvas-ai-executor'
 import { AISparkleIcon } from './AISparkleIcon'
@@ -39,6 +39,7 @@ interface AITextProps {
   selectionContext: string // JSON stringified — snapshot of original selection context
   title: string           // auto-generated, user-editable
   canvasId: string
+  boardId: string
   mode: 'simple' | 'chat'
   status: 'idle' | 'waiting' | 'streaming'
 }
@@ -53,6 +54,7 @@ export const aiTextProps: RecordProps<AITextShape> = {
   selectionContext: T.string,
   title: T.string,
   canvasId: T.string,
+  boardId: T.string,
   mode: T.literalEnum('simple', 'chat'),
   status: T.literalEnum('idle', 'waiting', 'streaming'),
 }
@@ -62,6 +64,7 @@ export const aiTextProps: RecordProps<AITextShape> = {
 const versions = createShapePropsMigrationIds('ai-text', {
   AddChatFields: 1,
   AddInteractionFields: 2,
+  AddBoardRelationship: 3,
 })
 
 const aiTextMigrations = createShapePropsMigrationSequence({
@@ -99,6 +102,15 @@ const aiTextMigrations = createShapePropsMigrationSequence({
         delete props.status
       },
     },
+    {
+      id: versions.AddBoardRelationship,
+      up: (props: Record<string, unknown>) => {
+        if (props.boardId === undefined) props.boardId = ''
+      },
+      down: (props: Record<string, unknown>) => {
+        delete props.boardId
+      },
+    },
   ],
 })
 
@@ -130,6 +142,69 @@ function getSimpleModeText(messages: ChatMessage[]): string {
   }
 
   return messages[messages.length - 1]?.text || ''
+}
+
+function getBoardHintFromSelectionContext(selectionContext: string): { boardId?: string; boardName?: string } | null {
+  try {
+    const context = JSON.parse(selectionContext) as CanvasAISelectionContext
+
+    if (context.selectedImages?.boardId || context.selectedImages?.boardName) {
+      return {
+        boardId: context.selectedImages.boardId,
+        boardName: context.selectedImages.boardName,
+      }
+    }
+
+    if (context.selectedBoards?.boards?.length === 1) {
+      const board = context.selectedBoards.boards[0]
+      return {
+        boardId: board.id,
+        boardName: board.name,
+      }
+    }
+
+    if (context.selectedBoards?.names?.length === 1) {
+      return { boardName: context.selectedBoards.names[0] }
+    }
+  } catch {}
+
+  return null
+}
+
+function useBackfillBoardRelationship(shape: AITextShape) {
+  const editor = useEditor()
+  const attemptedRef = useRef(false)
+
+  useEffect(() => {
+    if (shape.props.boardId || !shape.props.canvasId || attemptedRef.current) return
+
+    const boardHint = getBoardHintFromSelectionContext(shape.props.selectionContext)
+    if (!boardHint?.boardId && !boardHint?.boardName) {
+      attemptedRef.current = true
+      return
+    }
+
+    attemptedRef.current = true
+
+    const params = new URLSearchParams({ canvasId: shape.props.canvasId })
+    if (boardHint.boardId) params.set('boardId', boardHint.boardId)
+    else if (boardHint.boardName) params.set('name', boardHint.boardName)
+
+    fetch(`/api/boards?${params.toString()}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Board not found')
+        return res.json()
+      })
+      .then((data: { id?: string }) => {
+        if (!data.id) return
+        editor.updateShape({
+          id: shape.id,
+          type: 'ai-text',
+          props: { boardId: data.id },
+        })
+      })
+      .catch(() => {})
+  }, [editor, shape.id, shape.props.boardId, shape.props.canvasId, shape.props.selectionContext])
 }
 
 async function generateTitle(
@@ -264,6 +339,7 @@ function SimpleMode({
   const text = getSimpleModeText(messages)
   const hasContent = text.length > 0
   useAutoTitle(shape, messages)
+  useBackfillBoardRelationship(shape)
 
   // Auto-size height to fit content (only in simple mode, not when switching to chat)
   useEffect(() => {
@@ -341,6 +417,7 @@ function ChatMode({
   const inputRef = useRef<HTMLInputElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
   useAutoTitle(shape, messages)
+  useBackfillBoardRelationship(shape)
 
   // Auto-focus input when chat mode opens
   useEffect(() => {
@@ -543,6 +620,7 @@ export class AITextShapeUtil extends ShapeUtil<AITextShape> {
       selectionContext: '{}',
       title: '',
       canvasId: '',
+      boardId: '',
       mode: 'simple',
       status: 'idle',
     }

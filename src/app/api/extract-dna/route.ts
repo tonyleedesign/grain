@@ -121,6 +121,7 @@ async function runSynthesis(
 export async function POST(request: NextRequest) {
   try {
     const {
+      boardId: requestedBoardId,
       boardName,
       canvasId,
       medium,
@@ -132,6 +133,7 @@ export async function POST(request: NextRequest) {
       feedback,
       previousDna,
     } = (await request.json()) as {
+      boardId?: string
       boardName: string
       canvasId: string
       medium: Medium
@@ -144,9 +146,9 @@ export async function POST(request: NextRequest) {
       previousDna?: Record<string, unknown>
     }
 
-    if (!boardName || !canvasId || !medium || !imageUrls?.length) {
+    if ((!requestedBoardId && !boardName) || !canvasId || !medium || !imageUrls?.length) {
       return NextResponse.json(
-        { error: 'boardName, canvasId, medium, and imageUrls are required' },
+        { error: 'boardId or boardName, plus canvasId, medium, and imageUrls are required' },
         { status: 400 }
       )
     }
@@ -198,16 +200,24 @@ export async function POST(request: NextRequest) {
     )
 
     // Resolve or create the board identity row first.
-    let boardId: string | null = null
+    let boardId: string | null = requestedBoardId || null
 
-    const { data: existingBoard, error: boardLookupError } = await supabaseServer
-      .from('boards')
-      .select('id')
-      .eq('canvas_id', canvasId)
-      .eq('name', boardName)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    let existingBoard: { id: string } | null = null
+    let boardLookupError: unknown = null
+
+    if (!boardId && boardName) {
+      const lookup = await supabaseServer
+        .from('boards')
+        .select('id')
+        .eq('canvas_id', canvasId)
+        .eq('name', boardName)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      existingBoard = lookup.data
+      boardLookupError = lookup.error
+    }
 
     if (boardLookupError) {
       console.error('Board lookup error:', boardLookupError)
@@ -220,7 +230,7 @@ export async function POST(request: NextRequest) {
         .from('boards')
         .insert({
           canvas_id: canvasId,
-          name: boardName,
+          name: boardName || 'Untitled',
         })
         .select('id')
         .single()

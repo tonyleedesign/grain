@@ -68,6 +68,7 @@ export const GrainPageMenu = memo(function GrainPageMenu() {
   const trackEvent = useUiEvents()
   const msg = useTranslation()
   const breakpoint = useBreakpoint()
+  const [isEditing, setIsEditing] = useState(false)
 
   const handleOpenChange = useCallback(() => setIsEditing(false), [])
   const [isOpen, onOpenChange] = useMenuIsOpen('page-menu', handleOpenChange)
@@ -89,8 +90,6 @@ export const GrainPageMenu = memo(function GrainPageMenu() {
     () => editor.getInstanceState().isCoarsePointer,
     [editor]
   )
-
-  const [isEditing, setIsEditing] = useState(false)
 
   useEffect(() => {
     function handleKeyDown() {
@@ -126,11 +125,17 @@ export const GrainPageMenu = memo(function GrainPageMenu() {
   )
 
   useLayoutEffect(() => {
-    setSortablePositionItems(
-      Object.fromEntries(
-        pages.map((page, i) => [page.id, { y: i * ITEM_HEIGHT, offsetY: 0, isSelected: false }])
+    const animationFrame = editor.timers.requestAnimationFrame(() => {
+      setSortablePositionItems(
+        Object.fromEntries(
+          pages.map((page, i) => [page.id, { y: i * ITEM_HEIGHT, offsetY: 0, isSelected: false }])
+        )
       )
-    )
+    })
+
+    return () => {
+      cancelAnimationFrame(animationFrame)
+    }
   }, [ITEM_HEIGHT, pages])
 
   useEffect(() => {

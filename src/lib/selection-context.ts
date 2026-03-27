@@ -3,6 +3,7 @@
 
 import { Editor, TLImageShape, TLShape, TLShapeId } from 'tldraw'
 import type { CanvasAISelectionContext } from '@/types/canvas-ai'
+import { getBoardIdFromMeta } from './board-identity'
 
 export function buildSelectionContext(editor: Editor): CanvasAISelectionContext {
   const selected = editor.getSelectedShapes()
@@ -58,6 +59,7 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
     const urls: string[] = []
     let allUngrouped = true
     let boardName: string | undefined
+    let boardId: string | undefined
 
     for (const img of images) {
       const asset = img.props.assetId ? editor.getAsset(img.props.assetId) : null
@@ -68,6 +70,7 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
       if (parent?.type === 'frame') {
         allUngrouped = false
         boardName = (parent.props as { name?: string }).name
+        boardId = getBoardIdFromMeta(parent)
       }
     }
 
@@ -75,6 +78,7 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
       urls,
       ungrouped: allUngrouped,
       boardName,
+      boardId,
     }
   }
 
@@ -95,6 +99,7 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
       }
 
       return {
+        id: getBoardIdFromMeta(board),
         name: (board.props as { name?: string }).name || 'Untitled',
         imageCount: imageUrls.length,
         imageUrls,
@@ -112,6 +117,7 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
       context.selectedImages = {
         urls: combinedBoardImageUrls,
         ungrouped: false,
+        boardId: boards.length === 1 ? getBoardIdFromMeta(boards[0]) : undefined,
         boardName: boards.length === 1
           ? (boards[0].props as { name?: string }).name
           : undefined,

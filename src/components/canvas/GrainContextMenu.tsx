@@ -22,7 +22,7 @@ export function createGrainContextMenu(onAskAI: () => void) {
         <TldrawUiMenuGroup id="grain-ai">
           <TldrawUiMenuItem
             id="ask-ai"
-            label={'Ask AI...' as any}
+            label="Ask AI..."
             icon={<AISparkleIcon size={14} />}
             onSelect={() => onAskAI()}
           />

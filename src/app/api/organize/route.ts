@@ -5,7 +5,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { CanvasImage } from '@/types/dna'
-import { supabaseServer } from '@/lib/supabase-server'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -88,19 +87,6 @@ export async function POST(request: NextRequest) {
         board_name: board.board_name,
         image_ids: board.image_indices.map((i) => images[i].id),
       })),
-    }
-
-    // Save board stubs to Supabase (no DNA yet — extracted separately after medium selection)
-    if (canvasId) {
-      for (const board of result.boards) {
-        const { error: dbError } = await supabaseServer.from('boards').insert({
-          canvas_id: canvasId,
-          name: board.board_name,
-        })
-        if (dbError) {
-          console.error('Board save error:', dbError)
-        }
-      }
     }
 
     return NextResponse.json(result)

@@ -5,7 +5,7 @@
 // Reference: grain-prd.md Section 11.3
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useEditor, createShapeId } from 'tldraw'
+import { useEditor, createShapeId, TLShapeId } from 'tldraw'
 import { motion } from 'framer-motion'
 import { X, GripVertical, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -22,15 +22,17 @@ type PanelState = 'idle' | 'needs_medium' | 'extracting' | 'ready' | 'error'
 
 interface DNAPanelV2Props {
   boardName: string
+  boardId?: string
+  frameShapeId?: TLShapeId
   canvasId: string
   onClose: () => void
 }
 
-export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
+export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, canvasId, onClose }: DNAPanelV2Props) {
   const editor = useEditor()
   const { setTheme, resetTheme, isDefaultTheme } = useTheme()
   const [state, setState] = useState<PanelState>('idle')
-  const [boardId, setBoardId] = useState<string | null>(null)
+  const [boardId, setBoardId] = useState<string | null>(initialBoardId || null)
   const [medium, setMedium] = useState<Medium | null>(null)
   const [useCase, setUseCase] = useState<string>('')
   const [dna, setDna] = useState<WebAppDNA | ImageGenDNA | null>(null)
@@ -84,17 +86,42 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
     setLoadedBoardName(boardName)
 
     // Get image URLs from the frame
-    const urls = getBoardImageUrls(editor, boardName)
+    const urls = getBoardImageUrls(editor, { boardId: initialBoardId, frameId: frameShapeId, frameName: boardName })
     setImageUrls(urls)
 
-    // Fetch board from API
-    fetch(`/api/boards?name=${encodeURIComponent(boardName)}&canvasId=${encodeURIComponent(canvasId)}`)
+    const params = new URLSearchParams({ canvasId })
+    if (initialBoardId) params.set('boardId', initialBoardId)
+    else {
+      if (frameShapeId) params.set('frameShapeId', frameShapeId)
+      params.set('name', boardName)
+    }
+
+    fetch(`/api/boards?${params.toString()}`)
       .then((res) => {
         if (!res.ok) throw new Error('Board not found')
         return res.json()
       })
       .then((data) => {
         setBoardId(data.id)
+        if (frameShapeId) {
+          const frame = editor.getShape(frameShapeId)
+          const currentBoardId = (frame?.meta as { boardId?: string } | undefined)?.boardId
+          if (frame?.type === 'frame' && currentBoardId !== data.id) {
+            editor.updateShape({
+              id: frameShapeId,
+              type: 'frame',
+              meta: { ...(frame.meta || {}), boardId: data.id },
+            })
+          }
+
+          if (data.frame_shape_id !== frameShapeId) {
+            fetch('/api/boards', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ canvasId, boardId: data.id, frameShapeId }),
+            }).catch(() => {})
+          }
+        }
         if (data.needs_extraction) {
           setState('needs_medium')
         } else {
@@ -120,7 +147,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       .catch(() => {
         setState('needs_medium')
       })
-  }, [boardName, canvasId, editor, loadedBoardName])
+  }, [boardName, canvasId, editor, frameShapeId, initialBoardId, loadedBoardName])
 
   const extractDNA = useCallback(
     async (selectedMedium: Medium, selectedUseCase: string, selectedSourceContext?: string, selectedAppealContext?: string) => {
@@ -138,6 +165,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            boardId,
             boardName,
             canvasId,
             medium: selectedMedium,
@@ -164,7 +192,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         setState('error')
       }
     },
-    [boardName, canvasId, imageUrls, feedback]
+    [boardId, boardName, canvasId, imageUrls, feedback]
   )
 
   const handleRegenerate = useCallback((reason?: string) => {
@@ -182,6 +210,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        boardId,
         boardName,
         canvasId,
         medium,
@@ -209,16 +238,13 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         setError(err instanceof Error ? err.message : 'Extraction failed')
         setState('error')
       })
-  }, [medium, boardName, canvasId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna])
+  }, [boardId, medium, boardName, canvasId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna])
 
   const handleDetach = useCallback(() => {
     if (!dna || !medium || !boardName) return
 
     // Find the frame on canvas to position snapshot nearby
-    const allShapes = editor.getCurrentPageShapes()
-    const frame = allShapes.find(
-      (s) => s.type === 'frame' && (s.props as { name?: string }).name === boardName
-    )
+    const frame = frameShapeId ? editor.getShape(frameShapeId) : null
     const offsetX = frame ? frame.x + ((frame.props as { w?: number }).w || 0) + 40 : 200
     const offsetY = frame ? frame.y : 200
 
@@ -244,6 +270,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       props: {
         w: 240,
         h: 320,
+        boardId: boardId || '',
         boardName,
         medium,
         directionSummary: dna.direction_summary || '',
@@ -253,7 +280,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         fontInfo,
       },
     })
-  }, [dna, medium, boardName, editor])
+  }, [boardId, dna, medium, boardName, editor, frameShapeId])
 
   return (
     <motion.div

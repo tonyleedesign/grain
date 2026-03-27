@@ -4,7 +4,7 @@
 // Used by both community (/) and private (/canvas) routes.
 // Reference: grain-prd.md Section 5.1, 11.2
 
-import { useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { Tldraw, TLComponents, TLAsset } from 'tldraw'
 import 'tldraw/tldraw.css'
 import './grain-canvas.css'
@@ -19,6 +19,10 @@ import { GrainMainMenu } from './GrainMainMenu'
 import { GrainPageMenu } from './GrainPageMenu'
 import { createGrainToolbar } from './GrainToolbar'
 
+function dispatchAskAI() {
+  window.dispatchEvent(new Event('grain:ask-ai'))
+}
+
 interface GrainCanvasProps {
   canvasType: 'community' | 'private'
   canvasId: string
@@ -28,13 +32,10 @@ interface GrainCanvasProps {
 export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasProps) {
   const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil, AITextShapeUtil], [])
 
-  // Mutable ref for AI expansion callback — set by CanvasUI, called by toolbars/context menu
-  const askAIRef = useRef<() => void>(() => {})
-
   const components = useMemo<TLComponents>(
     () => ({
-      ImageToolbar: createGrainImageToolbar(() => askAIRef.current()),
-      ContextMenu: createGrainContextMenu(() => askAIRef.current()),
+      ImageToolbar: createGrainImageToolbar(dispatchAskAI),
+      ContextMenu: createGrainContextMenu(dispatchAskAI),
       MenuPanel: GrainMenuPanel,
       MainMenu: GrainMainMenu,
       PageMenu: GrainPageMenu,
@@ -69,7 +70,7 @@ export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasPro
         options={{ actionShortcutsLocation: 'menu' }}
         persistenceKey={`grain-${canvasType}-${canvasId}`}
       >
-        <CanvasUI canvasId={canvasId} askAIRef={askAIRef} />
+        <CanvasUI canvasId={canvasId} />
       </Tldraw>
     </div>
   )

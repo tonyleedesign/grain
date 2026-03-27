@@ -12,6 +12,7 @@ import { executeToolCalls, createAIShape, streamToShape } from '@/lib/canvas-ai-
 import type { CanvasAIResponse, CanvasAIChatRequest, AISuggestion, ChatMessage } from '@/types/canvas-ai'
 import { AIThinkingIndicator } from './AIThinkingIndicator'
 import { AISparkleIcon } from './AISparkleIcon'
+import { getSelectionBoardReference } from '@/lib/board-identity'
 
 interface AIActionBarProps {
   canvasId: string
@@ -180,10 +181,10 @@ export function AIActionBar({
   const sendMessage = useCallback(async (message: string) => {
     if (!message.trim() || isProcessing) return
 
-    setIsProcessing(true)
-    setThinkingStatus('Thinking...')
     setExpanded(false)
     setInputValue('')
+    const boardReference = getSelectionBoardReference(editor)
+    const relatedBoardId = boardReference?.boardId || ''
 
     try {
       const context = buildSelectionContext(editor)
@@ -194,6 +195,9 @@ export function AIActionBar({
       const isToolAction = toolPatterns.test(message)
 
       if (isToolAction) {
+        setIsProcessing(true)
+        setThinkingStatus('Thinking...')
+
         // Use single-shot endpoint for tool-use actions
         const res = await fetch('/api/canvas-ai', {
           method: 'POST',
@@ -223,7 +227,7 @@ export function AIActionBar({
 
         if (placeTextCall) {
           const textInput = placeTextCall.input as { text: string }
-          const shapeId = createAIShape(editor, 'near_selection', selectionCtxJson, canvasId)
+          const shapeId = createAIShape(editor, 'near_selection', selectionCtxJson, canvasId, relatedBoardId)
           const msgs: ChatMessage[] = [{ role: 'assistant', text: textInput.text, timestamp: Date.now() }]
           editor.updateShape({
             id: shapeId,
@@ -237,7 +241,7 @@ export function AIActionBar({
         }
       } else {
         // Use streaming endpoint — create shape immediately (shimmer shows while empty)
-        const shapeId = createAIShape(editor, 'near_selection', selectionCtxJson, canvasId)
+        const shapeId = createAIShape(editor, 'near_selection', selectionCtxJson, canvasId, relatedBoardId)
 
         // Build chat messages for the streaming endpoint
         const chatMessages: ChatMessage[] = [
@@ -295,6 +299,7 @@ export function AIActionBar({
             selectionContext: '{}',
             title: '',
             canvasId,
+            boardId: relatedBoardId,
             mode: 'simple',
             status: 'idle',
           },

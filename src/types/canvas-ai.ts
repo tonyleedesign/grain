@@ -8,10 +8,12 @@ export interface CanvasAISelectionContext {
     urls: string[]
     ungrouped: boolean
     boardName?: string
+    boardId?: string
   }
   selectedBoards?: {
     names: string[]
     boards: Array<{
+      id?: string
       name: string
       imageCount: number
       imageUrls: string[]

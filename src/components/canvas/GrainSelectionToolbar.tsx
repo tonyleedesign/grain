@@ -12,9 +12,12 @@ import {
   useValue,
   useActions,
   Box,
+  useToasts,
 } from 'tldraw'
 import { useCallback } from 'react'
 import { AISparkleIcon } from './AISparkleIcon'
+import { cleanupBoardArtifacts } from '@/lib/board-cleanup'
+import { getBoardIdFromMeta } from '@/lib/board-identity'
 
 interface GrainSelectionToolbarProps {
   onAskAI: () => void
@@ -72,7 +75,52 @@ export function GrainSelectionToolbar({ onAskAI }: GrainSelectionToolbarProps) {
 }
 
 function GrainSelectionToolbarContent({ onAskAI }: { onAskAI: () => void }) {
+  const editor = useEditor()
   const actions = useActions()
+  const { addToast } = useToasts()
+
+  const selectedBoard = useValue(
+    'selectedBoardForCleanup',
+    () => {
+      const selected = editor.getSelectedShapes()
+      if (selected.length !== 1 || selected[0].type !== 'frame') return null
+      return selected[0]
+    },
+    [editor]
+  )
+
+  const canCleanupBoard = Boolean(selectedBoard)
+
+  const handleCleanupBoard = useCallback(() => {
+    if (!selectedBoard) return
+
+    const boardId = getBoardIdFromMeta(selectedBoard)
+    if (!boardId) {
+      addToast({
+        title: 'Board not linked yet',
+        description: 'Open the board DNA panel once, then try cleanup again.',
+        severity: 'warning',
+      })
+      return
+    }
+
+    const movedCount = cleanupBoardArtifacts(editor, selectedBoard.id)
+
+    if (movedCount === 0) {
+      addToast({
+        title: 'Nothing to clean up',
+        description: 'No linked AI chats or snapshots were found for this board.',
+        severity: 'info',
+      })
+      return
+    }
+
+    addToast({
+      title: 'Board cleaned up',
+      description: `Moved ${movedCount} linked item${movedCount === 1 ? '' : 's'} next to the board.`,
+      severity: 'success',
+    })
+  }, [addToast, editor, selectedBoard])
 
   return (
     <>
@@ -90,6 +138,15 @@ function GrainSelectionToolbarContent({ onAskAI }: { onAskAI: () => void }) {
       >
         <TldrawUiButtonIcon small icon="duplicate" />
       </TldrawUiToolbarButton>
+      {canCleanupBoard && (
+        <TldrawUiToolbarButton
+          type="icon"
+          title="Clean up board"
+          onClick={handleCleanupBoard}
+        >
+          <TldrawUiButtonIcon small icon="stack-vertical" />
+        </TldrawUiToolbarButton>
+      )}
       <TldrawUiToolbarButton
         type="icon"
         title="Ask AI"

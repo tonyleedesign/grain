@@ -2,14 +2,25 @@
 // Used by DNA extraction to send board images to Claude.
 
 import { Editor, TLShapeId, TLImageShape } from 'tldraw'
+import { getBoardIdFromMeta } from './board-identity'
 
-export function getBoardImageUrls(editor: Editor, frameName: string): string[] {
+interface GetBoardImageUrlsOptions {
+  frameName?: string
+  frameId?: string
+  boardId?: string
+}
+
+export function getBoardImageUrls(editor: Editor, options: string | GetBoardImageUrlsOptions): string[] {
   const allShapes = editor.getCurrentPageShapes()
+  const config = typeof options === 'string' ? { frameName: options } : options
 
-  // Find the frame by name
-  const frame = allShapes.find(
-    (s) => s.type === 'frame' && (s.props as { name?: string }).name === frameName
-  )
+  const frame = allShapes.find((s) => {
+    if (s.type !== 'frame') return false
+    if (config.frameId && s.id === config.frameId) return true
+    if (config.boardId && getBoardIdFromMeta(s) === config.boardId) return true
+    if (config.frameName && (s.props as { name?: string }).name === config.frameName) return true
+    return false
+  })
   if (!frame) return []
 
   // Get child image shapes inside this frame

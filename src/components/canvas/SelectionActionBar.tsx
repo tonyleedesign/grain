@@ -97,6 +97,17 @@ export function SelectionActionBar({ canvasId }: SelectionActionBarProps) {
       const avgY = selectedImages.reduce((sum, img) => sum + img.y, 0) / selectedImages.length
 
       const frameId = createShapeId()
+      const createBoardResponse = await fetch('/api/boards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, canvasId, frameShapeId: frameId }),
+      })
+
+      if (!createBoardResponse.ok) {
+        throw new Error('Failed to create board record')
+      }
+
+      const { id: boardId } = await createBoardResponse.json()
 
       editor.run(() => {
         editor.createShape({
@@ -104,6 +115,7 @@ export function SelectionActionBar({ canvasId }: SelectionActionBarProps) {
           type: 'frame',
           x: avgX - frameW / 2,
           y: avgY - frameH / 2,
+          meta: { boardId },
           props: { w: frameW, h: frameH, name },
         })
 
@@ -124,13 +136,6 @@ export function SelectionActionBar({ canvasId }: SelectionActionBarProps) {
           }
           rowY += ROW_HEIGHT + IMAGE_GAP
         }
-      })
-
-      // Save board to Supabase via API (server-side bypasses RLS)
-      await fetch('/api/boards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, canvasId }),
       })
 
       // Select the new frame
