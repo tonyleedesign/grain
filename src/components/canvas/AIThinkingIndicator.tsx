@@ -4,7 +4,7 @@
 // Positioned at the selection point, replacing the AI action bar during processing.
 
 import { useEditor, useValue } from 'tldraw'
-import { Sparkles } from 'lucide-react'
+import { AISparkleIcon } from './AISparkleIcon'
 
 interface AIThinkingIndicatorProps {
   status: string // e.g. "Thinking...", "Grouping images...", "Writing..."
@@ -46,13 +46,9 @@ export function AIThinkingIndicator({ status }: AIThinkingIndicatorProps) {
         pointerEvents: 'none',
       }}
     >
-      <Sparkles
-        size={13}
-        style={{
-          color: 'var(--color-accent)',
-          animation: 'pulse 1.5s ease-in-out infinite',
-        }}
-      />
+      <div style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>
+        <AISparkleIcon size={13} />
+      </div>
       {status}
       <style>{`
         @keyframes pulse {

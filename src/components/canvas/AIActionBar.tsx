@@ -1,16 +1,17 @@
 'use client'
 
-// AI Action Bar — replaces the default selection toolbar.
-// Shows sparkle icon on any selection. Hover expands to suggestions + text input.
-// Sends messages to /api/canvas-ai and executes tool calls against the editor.
+// AI Action Bar — expanded panel for canvas AI interactions.
+// Entry points: ImageToolbar sparkle, SelectionToolbar sparkle, ContextMenu "Ask AI..."
+// Shows suggestions + text input when expanded, thinking indicator when processing.
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useEditor, useValue, TLShapeId, createShapeId } from 'tldraw'
-import { Sparkles, Download, Send } from 'lucide-react'
+import { Send } from 'lucide-react'
 import { buildSelectionContext } from '@/lib/selection-context'
 import { executeToolCalls } from '@/lib/canvas-ai-executor'
 import type { CanvasAIResponse, AISuggestion } from '@/types/canvas-ai'
 import { AIThinkingIndicator } from './AIThinkingIndicator'
+import { AISparkleIcon } from './AISparkleIcon'
 
 interface AIActionBarProps {
   canvasId: string
@@ -46,7 +47,7 @@ function getSuggestions(
   if (selectionType === 'board' && boardCount === 1) {
     return [
       { label: 'Extract DNA', message: 'Extract DNA from this board' },
-      { label: 'Rename', message: 'Suggest a better name for this board based on its images' },
+      { label: 'Rename', message: 'Rename this board to something that better describes its images. Use the rename_board tool.' },
     ]
   }
   if (selectionType === 'board' && boardCount >= 2) {
@@ -114,7 +115,7 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
     [editor]
   )
 
-  // Handle right-click "Ask AI..." trigger
+  // Handle toolbar/context menu "Ask AI..." trigger
   useEffect(() => {
     if (forceExpanded) {
       setExpanded(true)
@@ -202,7 +203,6 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
       }
     } catch (error) {
       console.error('Canvas AI error:', error)
-      // Place error text on canvas
       const bounds = editor.getSelectionPageBounds()
       if (bounds) {
         editor.createShape({
@@ -228,17 +228,17 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
     setShowDeleteConfirm(false)
   }, [editor])
 
-  // When nothing is selected but forceExpanded (right-click "Ask AI..."), show floating input
+  // Floating mode: expanded with no selection (context menu on blank canvas)
   const isFloatingMode = !hasSelection && expanded
 
-  if (!hasSelection && !expanded && !isProcessing) return null
+  // Only render when expanded, processing, or confirming delete
+  if (!expanded && !isProcessing && !showDeleteConfirm) return null
 
   // Show thinking indicator while processing
   if (isProcessing) {
     if (barPosition) {
       return <AIThinkingIndicator status={thinkingStatus} />
     }
-    // Floating thinking indicator when no selection
     return (
       <div
         style={{
@@ -260,9 +260,8 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
           pointerEvents: 'none',
         }}
       >
-        <Sparkles size={13} style={{ color: 'var(--color-accent)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+        <AISparkleIcon size={13} />
         {thinkingStatus}
-        <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
       </div>
     )
   }
@@ -339,7 +338,7 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
         ...(isFloatingMode
           ? { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }
           : barPosition
-            ? { left: barPosition.x, top: barPosition.y - 12, transform: 'translate(-50%, -100%)' }
+            ? { left: barPosition.x, top: barPosition.y - 60, transform: 'translate(-50%, -100%)' }
             : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }),
         zIndex: 1000,
         display: 'flex',
@@ -349,145 +348,89 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
         pointerEvents: 'auto',
       }}
     >
-      {expanded ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            padding: '8px',
-            borderRadius: 'var(--radius-lg)',
-            backgroundColor: 'var(--color-surface)',
-            boxShadow: 'var(--shadow-toolbar)',
-            fontFamily: 'var(--font-family)',
-            minWidth: 240,
-          }}
-        >
-          {/* Suggestion chips */}
-          {suggestions.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {suggestions.map((s, i) => (
-                <button
-                  key={i}
-                  onClick={() => sendMessage(s.message)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 10px',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'var(--color-bg)',
-                    color: 'var(--color-text)',
-                    border: '1px solid var(--color-border)',
-                    fontSize: 11,
-                    fontFamily: 'var(--font-family)',
-                    cursor: 'pointer',
-                    transition: 'border-color 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-accent)'
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)'
-                  }}
-                >
-                  <Sparkles size={10} style={{ color: 'var(--color-accent)' }} />
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Text input */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <input
-              ref={inputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && inputValue.trim()) {
-                  sendMessage(inputValue)
-                }
-                // Stop propagation to prevent tldraw from handling keyboard events
-                e.stopPropagation()
-              }}
-              placeholder="Ask AI..."
-              style={{
-                flex: 1,
-                padding: '6px 8px',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--color-bg)',
-                color: 'var(--color-text)',
-                border: '1px solid var(--color-border)',
-                fontSize: 12,
-                fontFamily: 'var(--font-family)',
-                outline: 'none',
-              }}
-              onFocus={(e) => {
-                (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-accent)'
-              }}
-              onBlur={(e) => {
-                (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-border)'
-              }}
-            />
-            <button
-              onClick={() => inputValue.trim() && sendMessage(inputValue)}
-              disabled={!inputValue.trim()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 28,
-                height: 28,
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: inputValue.trim() ? 'var(--color-accent)' : 'var(--color-bg)',
-                color: inputValue.trim() ? '#fff' : 'var(--color-muted)',
-                border: 'none',
-                cursor: inputValue.trim() ? 'pointer' : 'default',
-              }}
-            >
-              <Send size={12} />
-            </button>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          padding: '8px',
+          borderRadius: 'var(--radius-lg)',
+          backgroundColor: 'var(--color-surface)',
+          boxShadow: 'var(--shadow-toolbar)',
+          fontFamily: 'var(--font-family)',
+          minWidth: 240,
+        }}
+      >
+        {/* Suggestion chips */}
+        {suggestions.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => sendMessage(s.message)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--color-bg)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border)',
+                  fontSize: 11,
+                  fontFamily: 'var(--font-family)',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-accent)'
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)'
+                }}
+              >
+                <AISparkleIcon size={10} />
+                {s.label}
+              </button>
+            ))}
           </div>
-        </div>
-      ) : (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '6px 8px',
-            borderRadius: 'var(--radius-lg)',
-            backgroundColor: 'var(--color-surface)',
-            boxShadow: 'var(--shadow-toolbar)',
-          }}
-        >
-          {/* Download button (kept from original toolbar) */}
-          <button
-            onClick={() => {
-              // Download not yet implemented for tldraw v4
-              console.log('Download not yet implemented for tldraw v4')
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 28,
-              height: 28,
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'transparent',
-              color: 'var(--color-muted)',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-            title="Download selection"
-          >
-            <Download size={14} />
-          </button>
+        )}
 
-          {/* AI sparkle icon — click to expand */}
+        {/* Text input */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input
+            ref={inputRef}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && inputValue.trim()) {
+                sendMessage(inputValue)
+              }
+              // Stop propagation to prevent tldraw from handling keyboard events
+              e.stopPropagation()
+            }}
+            placeholder="Ask AI..."
+            style={{
+              flex: 1,
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--color-bg)',
+              color: 'var(--color-text)',
+              border: '1px solid var(--color-border)',
+              fontSize: 12,
+              fontFamily: 'var(--font-family)',
+              outline: 'none',
+            }}
+            onFocus={(e) => {
+              (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-accent)'
+            }}
+            onBlur={(e) => {
+              (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-border)'
+            }}
+          />
           <button
-            onClick={() => setExpanded(true)}
+            onClick={() => inputValue.trim() && sendMessage(inputValue)}
+            disabled={!inputValue.trim()}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -495,17 +438,16 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
               width: 28,
               height: 28,
               borderRadius: 'var(--radius-md)',
-              backgroundColor: 'transparent',
-              color: 'var(--color-accent)',
+              backgroundColor: inputValue.trim() ? 'var(--color-accent)' : 'var(--color-bg)',
+              color: inputValue.trim() ? '#fff' : 'var(--color-muted)',
               border: 'none',
-              cursor: 'pointer',
+              cursor: inputValue.trim() ? 'pointer' : 'default',
             }}
-            title="Ask AI"
           >
-            <Sparkles size={14} />
+            <Send size={12} />
           </button>
         </div>
-      )}
+      </div>
     </div>
   )
 }

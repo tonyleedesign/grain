@@ -80,8 +80,34 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
 
   // Add board details if boards are selected
   if (boards.length > 0) {
+    // Collect image URLs from inside the selected boards
+    const boardImageUrls: string[] = []
+    for (const board of boards) {
+      const children = editor.getSortedChildIdsForParent(board.id)
+      for (const childId of children) {
+        const child = editor.getShape(childId)
+        if (child?.type === 'image') {
+          const img = child as TLImageShape
+          const asset = img.props.assetId ? editor.getAsset(img.props.assetId) : null
+          const src = (asset?.props as { src?: string })?.src
+          if (src) boardImageUrls.push(src)
+        }
+      }
+    }
+
     context.selectedBoards = {
       names: boards.map((b) => (b.props as { name?: string }).name || 'Untitled'),
+    }
+
+    // If no direct images selected but boards have images, include them for vision
+    if (!context.selectedImages && boardImageUrls.length > 0) {
+      context.selectedImages = {
+        urls: boardImageUrls,
+        ungrouped: false,
+        boardName: boards.length === 1
+          ? (boards[0].props as { name?: string }).name
+          : undefined,
+      }
     }
   }
 

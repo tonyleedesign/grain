@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
         },
       ],
       tools: CANVAS_AI_TOOLS,
+      tool_choice: { type: 'any' },
       messages: [{ role: 'user', content }],
     })
 
