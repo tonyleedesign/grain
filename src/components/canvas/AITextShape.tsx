@@ -11,6 +11,7 @@ import {
   T,
   RecordProps,
 } from 'tldraw'
+import { ChatMessage } from '@/types/canvas-ai'
 
 // Module augmentation to register custom shape type with tldraw
 declare module '@tldraw/tlschema' {
@@ -22,7 +23,10 @@ declare module '@tldraw/tlschema' {
 interface AITextProps {
   w: number
   h: number
-  text: string
+  text: string            // legacy — kept for compat
+  messages: string        // JSON stringified ChatMessage[]
+  selectionContext: string // JSON stringified — snapshot of original selection context
+  title: string           // auto-generated, user-editable
 }
 
 export type AITextShape = TLBaseShape<'ai-text', AITextProps>
@@ -31,13 +35,26 @@ export const aiTextProps: RecordProps<AITextShape> = {
   w: T.number,
   h: T.number,
   text: T.string,
+  messages: T.string,
+  selectionContext: T.string,
+  title: T.string,
 }
 
 const PADDING = 12
 const BORDER_WIDTH = 3
 const FONT_SIZE = 13
 const LINE_HEIGHT = 1.5
-const MAX_WIDTH = 320
+export function getMessages(shape: AITextShape): ChatMessage[] {
+  try {
+    const msgs: ChatMessage[] = JSON.parse(shape.props.messages)
+    if (msgs.length > 0) return msgs
+  } catch {}
+  // Legacy compat: if no messages but has text, treat as single assistant message
+  if (shape.props.text) {
+    return [{ role: 'assistant', text: shape.props.text, timestamp: 0 }]
+  }
+  return []
+}
 
 export class AITextShapeUtil extends ShapeUtil<AITextShape> {
   static override type = 'ai-text' as const
@@ -53,9 +70,12 @@ export class AITextShapeUtil extends ShapeUtil<AITextShape> {
 
   getDefaultProps(): AITextProps {
     return {
-      w: MAX_WIDTH,
+      w: 360,
       h: 40,
       text: '',
+      messages: '[]',
+      selectionContext: '{}',
+      title: '',
     }
   }
 
