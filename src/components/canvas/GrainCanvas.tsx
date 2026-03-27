@@ -123,7 +123,7 @@ export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, acc
         inferDarkMode={false}
         options={{ actionShortcutsLocation: 'menu' }}
       >
-        <CanvasUI canvasId={canvasId} />
+        <CanvasUI canvasId={canvasId} accessToken={accessToken} />
       </Tldraw>
     </div>
   )

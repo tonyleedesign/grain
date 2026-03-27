@@ -52,6 +52,30 @@
   box-shadow: var(--shadow-toolbar);
 }
 
+.grain-canvas-wrapper .grain-menu-zone__brand {
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+}
+
+.grain-canvas-wrapper .grain-menu-zone__brand-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface) 82%, white);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, white);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.grain-canvas-wrapper .grain-menu-zone__brand-mark {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
 /* Hover: transparent bg, subtle ::after highlight (consistent everywhere) */
 .grain-canvas-wrapper .tlui-menu-zone .tlui-button:hover {
   background: transparent;

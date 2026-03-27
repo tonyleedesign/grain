@@ -1,0 +1,15 @@
+{
+  "name": "grain-extension",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Chromium extension scaffold for Send to Grain.",
+  "scripts": {
+    "dev": "npm run build",
+    "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
+    "build:firefox": "npm run build && node scripts/build-firefox.mjs",
+    "package:firefox": "npm run build:firefox && node scripts/package-firefox.mjs",
+    "package:firefox-source": "node scripts/package-firefox-source.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

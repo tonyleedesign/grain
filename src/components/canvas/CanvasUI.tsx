@@ -4,7 +4,7 @@
 // Manages DNA panel visibility based on frame selection.
 // Reference: grain-prd.md Section 11.3
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useEditor, useValue, TLShapeId } from 'tldraw'
 import { RotateCcw } from 'lucide-react'
 import { AIActionBar } from './AIActionBar'
@@ -12,6 +12,8 @@ import { GrainSelectionToolbar } from './GrainSelectionToolbar'
 import { DNAPanelV2 } from '../dna/DNAPanelV2'
 import { useTheme } from '@/context/ThemeContext'
 import { applyBoardLinkToShape, findContainingBoardFrame, getBoardIdFromMeta } from '@/lib/board-identity'
+import { applyPendingCaptures } from '@/lib/capture-placement'
+import type { PendingCapture } from '@/types/captures'
 
 interface ActiveBoard {
   boardId?: string
@@ -21,9 +23,10 @@ interface ActiveBoard {
 
 interface CanvasUIProps {
   canvasId: string
+  accessToken?: string | null
 }
 
-export function CanvasUI({ canvasId }: CanvasUIProps) {
+export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const editor = useEditor()
   const { isDefaultTheme, resetTheme } = useTheme()
   const [activeBoard, setActiveBoard] = useState<ActiveBoard | null>(null)
@@ -32,6 +35,8 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
   const [aiBarVisible, setAiBarVisible] = useState(false)
   const [revertAnchor, setRevertAnchor] = useState<{ left: number; top: number } | null>(null)
   const [lastBoardName, setLastBoardName] = useState<string | null>(null)
+  const isApplyingCapturesRef = useRef(false)
+  const capturePollTimeoutRef = useRef<number | null>(null)
 
   // Wire the AI button callbacks (image toolbar, context menu, selection toolbar)
   useEffect(() => {
@@ -161,6 +166,118 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
       window.removeEventListener('resize', scheduleUpdate)
     }
   }, [isDefaultTheme])
+
+  useEffect(() => {
+    if (!accessToken) return
+
+    let cancelled = false
+    const FAST_POLL_MS = 1500
+    const IDLE_POLL_MS = 4000
+
+    const clearScheduledPoll = () => {
+      if (capturePollTimeoutRef.current) {
+        window.clearTimeout(capturePollTimeoutRef.current)
+        capturePollTimeoutRef.current = null
+      }
+    }
+
+    const scheduleNextPoll = (delay: number) => {
+      clearScheduledPoll()
+
+      if (cancelled) return
+
+      capturePollTimeoutRef.current = window.setTimeout(() => {
+        if (!cancelled && !document.hidden) {
+          void loadPendingCaptures()
+        }
+      }, delay)
+    }
+
+    const loadPendingCaptures = async () => {
+      if (isApplyingCapturesRef.current) return
+      isApplyingCapturesRef.current = true
+      let nextPollDelay = IDLE_POLL_MS
+
+      try {
+        const response = await fetch(`/api/send-to-grain/pending?canvasId=${canvasId}`, {
+          cache: 'no-store',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '')
+          console.error('Failed to fetch pending captures:', response.status, errorText)
+          return
+        }
+
+        const data = (await response.json()) as { captures?: PendingCapture[] }
+        const captures = data.captures || []
+        console.info('[SendToGrain] pending captures fetched', {
+          canvasId,
+          count: captures.length,
+          ids: captures.map((capture) => capture.id),
+        })
+        if (!captures.length || cancelled) return
+
+        const appliedIds = await applyPendingCaptures(editor, captures)
+        console.info('[SendToGrain] pending captures applied', {
+          canvasId,
+          appliedIds,
+        })
+        nextPollDelay = FAST_POLL_MS
+        if (!appliedIds.length || cancelled) return
+
+        const markAppliedResponse = await fetch('/api/send-to-grain/pending', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            canvasId,
+            captureIds: appliedIds,
+          }),
+        })
+
+        if (!markAppliedResponse.ok) {
+          const errorText = await markAppliedResponse.text().catch(() => '')
+          console.error('Failed to mark captures applied:', markAppliedResponse.status, errorText)
+        }
+      } catch (error) {
+        console.error('Failed to apply pending captures:', error)
+      } finally {
+        isApplyingCapturesRef.current = false
+        if (!cancelled && !document.hidden) {
+          scheduleNextPoll(nextPollDelay)
+        }
+      }
+    }
+
+    void loadPendingCaptures()
+
+    const triggerImmediateSync = () => {
+      if (!cancelled && !document.hidden) {
+        clearScheduledPoll()
+        void loadPendingCaptures()
+      }
+    }
+
+    window.addEventListener('focus', triggerImmediateSync)
+    window.addEventListener('pageshow', triggerImmediateSync)
+    window.addEventListener('online', triggerImmediateSync)
+    document.addEventListener('visibilitychange', triggerImmediateSync)
+
+    return () => {
+      cancelled = true
+      clearScheduledPoll()
+      window.removeEventListener('focus', triggerImmediateSync)
+      window.removeEventListener('pageshow', triggerImmediateSync)
+      window.removeEventListener('online', triggerImmediateSync)
+      document.removeEventListener('visibilitychange', triggerImmediateSync)
+    }
+  }, [accessToken, canvasId, editor])
 
   return (
     <>
