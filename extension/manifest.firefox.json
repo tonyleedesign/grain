@@ -1,0 +1,41 @@
+{
+  "manifest_version": 2,
+  "name": "Send to Grain",
+  "version": "0.0.0",
+  "description": "Capture links, images, and pages into Grain.",
+  "icons": {
+    "16": "dist/icons/grain-16.png",
+    "32": "dist/icons/grain-32.png",
+    "48": "dist/icons/grain-48.png",
+    "128": "dist/icons/grain-128.png"
+  },
+  "browser_action": {
+    "default_title": "Send to Grain",
+    "default_icon": {
+      "16": "dist/icons/grain-16.png",
+      "32": "dist/icons/grain-32.png"
+    },
+    "default_popup": "dist/popup.html"
+  },
+  "background": {
+    "page": "background.html"
+  },
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "scripting",
+    "tabs",
+    "storage",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "<all_urls>"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "send-to-grain@grain.local",
+      "data_collection_permissions": {
+        "required": ["authenticationInfo", "websiteActivity"]
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@
 // Custom MenuPanel — mirrors DefaultMenuPanel structure but uses Grain's
 // custom MainMenu and PageMenu while keeping tldraw's layout classes intact.
 
+import Image from 'next/image'
 import {
   useEditor,
   usePassThroughWheelEvents,
@@ -37,6 +38,17 @@ export const GrainMenuPanel = memo(function GrainMenuPanel() {
   return (
     <nav ref={ref} className="tlui-menu-zone">
       <TldrawUiRow>
+        <div className="grain-menu-zone__brand" aria-hidden="true">
+          <div className="grain-menu-zone__brand-badge">
+            <Image
+              src="/brand/grain-logo.svg"
+              alt=""
+              width={22}
+              height={22}
+              className="grain-menu-zone__brand-mark"
+            />
+          </div>
+        </div>
         {MainMenu && <MainMenu />}
         {PageMenu && !isSinglePageMode && <PageMenu />}
         {showQuickActions ? (
