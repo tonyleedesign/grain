@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+Thumbs.db
 
 # debug
 npm-debug.log*
@@ -38,4 +39,20 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+
+# local AI / agent tooling
+.agents/
+.claude/
+PLAN.md
+skills-lock.json
+
+# internal planning / private docs
+docs/superpowers/plans/
+docs/superpowers/specs/
+grain-prd.md
+design-dna-test.html
+
+# extension build artifacts
+extension/dist/
+extension/firefox/
+extension/release/
