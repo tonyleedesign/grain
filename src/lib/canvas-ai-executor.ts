@@ -2,7 +2,8 @@
 // Each tool function takes the editor + params, mutates the canvas, returns a status message.
 
 import { Editor, TLImageShape, TLShapeId, createShapeId } from 'tldraw'
-import type { CanvasAIToolCall } from '@/types/canvas-ai'
+import type { ChatMessage, SSEEvent, CanvasAIToolCall } from '@/types/canvas-ai'
+import type { AITextShape } from '@/components/canvas/AITextShape'
 
 const BOARD_PADDING = 24
 const IMAGE_GAP = 12
@@ -241,4 +242,120 @@ async function executeRenameBoard(
   })
 
   return { success: true, message: `Renamed to "${params.newName}"` }
+}
+
+/**
+ * Create an ai-text shape immediately with an empty assistant message.
+ * Returns the shape ID for streaming updates.
+ */
+export function createAIShape(
+  editor: Editor,
+  position: 'near_selection' | { x: number; y: number },
+  selectionContext: string
+): TLShapeId {
+  let x: number
+  let y: number
+
+  if (position === 'near_selection') {
+    const bounds = editor.getSelectionPageBounds()
+    if (bounds) {
+      x = bounds.maxX + AI_TEXT_OFFSET
+      y = bounds.minY
+    } else {
+      const viewport = editor.getViewportPageBounds()
+      x = viewport.midX
+      y = viewport.midY
+    }
+  } else {
+    x = position.x
+    y = position.y
+  }
+
+  const shapeId = createShapeId()
+  const initialMessage: ChatMessage[] = [
+    { role: 'assistant', text: '', timestamp: Date.now() },
+  ]
+
+  editor.createShape({
+    id: shapeId,
+    type: 'ai-text',
+    x,
+    y,
+    props: {
+      w: 360,
+      h: 40,
+      text: '',
+      messages: JSON.stringify(initialMessage),
+      selectionContext,
+      title: '',
+    },
+  })
+
+  return shapeId
+}
+
+/**
+ * Stream an SSE response into a shape's messages prop.
+ * Creates or updates the last assistant message with incoming text deltas.
+ * Returns any tool calls received during the stream.
+ */
+export async function streamToShape(
+  editor: Editor,
+  shapeId: TLShapeId,
+  stream: ReadableStream<Uint8Array>
+): Promise<{ toolCalls: CanvasAIToolCall[] }> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  const toolCalls: CanvasAIToolCall[] = []
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Process complete SSE events (separated by double newlines)
+      const events = buffer.split('\n\n')
+      buffer = events.pop() || '' // Keep incomplete event in buffer
+
+      for (const event of events) {
+        const line = event.trim()
+        if (!line.startsWith('data: ')) continue
+
+        try {
+          const data: SSEEvent = JSON.parse(line.slice(6))
+
+          if (data.type === 'text_delta') {
+            // Update the last assistant message with the new text
+            const shape = editor.getShape(shapeId) as AITextShape | undefined
+            if (!shape) continue
+
+            const messages: ChatMessage[] = JSON.parse(shape.props.messages)
+            const lastMsg = messages[messages.length - 1]
+            if (lastMsg && lastMsg.role === 'assistant') {
+              lastMsg.text += data.text
+              editor.updateShape({
+                id: shapeId,
+                type: 'ai-text',
+                props: { messages: JSON.stringify(messages) },
+              })
+            }
+          } else if (data.type === 'tool_call') {
+            toolCalls.push({ name: data.name, input: data.input })
+          } else if (data.type === 'error') {
+            console.error('[streamToShape] SSE error:', data.message)
+          }
+          // 'done' type — loop will end naturally
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return { toolCalls }
 }
