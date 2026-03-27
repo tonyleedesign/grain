@@ -11,10 +11,14 @@ import {
   Rectangle2d,
   T,
   RecordProps,
+  useEditor,
+  TLShapeId,
 } from 'tldraw'
 import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from '@tldraw/tlschema'
 import { Reply, Send, Minus } from 'lucide-react'
-import { ChatMessage } from '@/types/canvas-ai'
+import { ChatMessage, CanvasAIChatRequest, CanvasAIToolCall } from '@/types/canvas-ai'
+import { buildSelectionContext } from '@/lib/selection-context'
+import { streamToShape, executeToolCalls } from '@/lib/canvas-ai-executor'
 import { AISparkleIcon } from './AISparkleIcon'
 import './ai-chat-card.css'
 
@@ -81,6 +85,73 @@ export function getMessages(shape: AITextShape): ChatMessage[] {
   return []
 }
 
+function getCanvasId(): string {
+  if (typeof window === 'undefined') return ''
+  const match = window.location.pathname.match(/\/canvas\/([^/]+)/)
+  return match?.[1] || ''
+}
+
+async function sendChatMessage(
+  editor: ReturnType<typeof useEditor>,
+  shapeId: TLShapeId,
+  userText: string,
+  canvasId: string
+) {
+  const shape = editor.getShape(shapeId) as AITextShape | undefined
+  if (!shape) return
+
+  const messages: ChatMessage[] = JSON.parse(shape.props.messages)
+
+  // Append user message
+  messages.push({ role: 'user', text: userText, timestamp: Date.now() })
+  // Append empty assistant message for streaming
+  messages.push({ role: 'assistant', text: '', timestamp: Date.now() })
+
+  // Update shape to show user message + empty assistant placeholder
+  editor.updateShape({
+    id: shapeId,
+    type: 'ai-text',
+    props: {
+      messages: JSON.stringify(messages),
+      h: 280, // Ensure chat mode height
+    },
+  })
+
+  // Build current selection context
+  const currentContext = buildSelectionContext(editor)
+
+  // Call streaming endpoint
+  const res = await fetch('/api/canvas-ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages,
+      originalContext: shape.props.selectionContext,
+      currentContext,
+      canvasId,
+    } satisfies CanvasAIChatRequest),
+  })
+
+  if (!res.ok || !res.body) {
+    // Update last message with error
+    messages[messages.length - 1].text = 'Error: request failed'
+    editor.updateShape({
+      id: shapeId,
+      type: 'ai-text',
+      props: { messages: JSON.stringify(messages) },
+    })
+    return
+  }
+
+  // Stream response into the shape
+  const { toolCalls } = await streamToShape(editor, shapeId, res.body)
+
+  // Execute any tool calls
+  if (toolCalls.length > 0) {
+    await executeToolCalls(editor, toolCalls, canvasId)
+  }
+}
+
 function SimpleMode({
   shape,
   messages,
@@ -90,6 +161,7 @@ function SimpleMode({
   messages: ChatMessage[]
   isStreaming: boolean
 }) {
+  const editor = useEditor()
   const text = messages[0]?.text || ''
   const hasContent = text.length > 0
 
@@ -99,6 +171,14 @@ function SimpleMode({
   } else if (isStreaming) {
     className += ' ai-card-shimmer-active ai-card-shimmer-streaming'
   }
+
+  const handleReply = useCallback(() => {
+    editor.updateShape({
+      id: shape.id,
+      type: 'ai-text',
+      props: { h: 280 },
+    })
+  }, [editor, shape.id])
 
   return (
     <div
@@ -111,7 +191,7 @@ function SimpleMode({
     >
       {text || '\u00A0'}
       {hasContent && !isStreaming && (
-        <button className="ai-card-reply-btn" title="Reply">
+        <button className="ai-card-reply-btn" title="Reply" onClick={handleReply}>
           <Reply size={13} />
         </button>
       )}
@@ -128,11 +208,18 @@ function ChatMode({
   messages: ChatMessage[]
   isStreaming: boolean
 }) {
+  const editor = useEditor()
   const [inputValue, setInputValue] = useState('')
   const [isMinimized, setIsMinimized] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const userScrolledRef = useRef(false)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-focus input when chat mode opens
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 100)
+  }, [])
 
   // Auto-scroll to bottom on new messages (unless user scrolled up)
   useEffect(() => {
@@ -147,6 +234,13 @@ function ChatMode({
     const { scrollTop, scrollHeight, clientHeight } = container
     userScrolledRef.current = scrollHeight - scrollTop - clientHeight > 40
   }, [])
+
+  const handleSend = useCallback(() => {
+    if (!inputValue.trim() || isStreaming) return
+    const text = inputValue.trim()
+    setInputValue('')
+    sendChatMessage(editor, shape.id as TLShapeId, text, getCanvasId())
+  }, [editor, shape.id, inputValue, isStreaming])
 
   // If minimized, show last message in simple mode appearance
   if (isMinimized) {
@@ -222,14 +316,14 @@ function ChatMode({
       {/* Input bar */}
       <div className="ai-card-input-bar">
         <input
+          ref={inputRef}
           className="ai-card-input"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation()
             if (e.key === 'Enter' && inputValue.trim() && !isStreaming) {
-              // Will dispatch send event in Task 8
-              setInputValue('')
+              handleSend()
             }
           }}
           placeholder="Reply..."
@@ -238,6 +332,7 @@ function ChatMode({
         <button
           className="ai-card-send"
           disabled={!inputValue.trim() || isStreaming}
+          onClick={handleSend}
         >
           <Send size={11} />
         </button>
