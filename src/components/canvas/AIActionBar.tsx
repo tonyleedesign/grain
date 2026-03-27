@@ -8,7 +8,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useEditor, useValue, TLShapeId, createShapeId } from 'tldraw'
 import { Send } from 'lucide-react'
 import { buildSelectionContext } from '@/lib/selection-context'
-import { executeToolCalls } from '@/lib/canvas-ai-executor'
+import { executeToolCalls, createAIShape } from '@/lib/canvas-ai-executor'
 import type { CanvasAIResponse, AISuggestion } from '@/types/canvas-ai'
 import { AIThinkingIndicator } from './AIThinkingIndicator'
 import { AISparkleIcon } from './AISparkleIcon'
@@ -188,6 +188,7 @@ export function AIActionBar({
     try {
       const context = buildSelectionContext(editor)
 
+      // Use the single-shot endpoint (for tool-use actions)
       const res = await fetch('/api/canvas-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,23 +201,35 @@ export function AIActionBar({
       }
 
       const data: CanvasAIResponse = await res.json()
-
       if (data.error) throw new Error(data.error)
 
-      // Execute tool calls
-      if (data.toolCalls.length > 0) {
-        setThinkingStatus('Executing...')
-        const results = await executeToolCalls(editor, data.toolCalls, canvasId)
+      // Separate place_text from other tool calls
+      const placeTextCall = data.toolCalls.find((tc) => tc.name === 'place_text')
+      const otherToolCalls = data.toolCalls.filter((tc) => tc.name !== 'place_text')
 
-        // Handle special results
+      // Execute non-text tool calls first
+      if (otherToolCalls.length > 0) {
+        setThinkingStatus('Executing...')
+        const results = await executeToolCalls(editor, otherToolCalls, canvasId)
         for (const result of results) {
-          if (result.triggerExtractDna && onExtractDna) {
-            onExtractDna()
-          }
-          if (result.needsDeleteConfirmation) {
-            setShowDeleteConfirm(true)
-          }
+          if (result.triggerExtractDna && onExtractDna) onExtractDna()
+          if (result.needsDeleteConfirmation) setShowDeleteConfirm(true)
         }
+      }
+
+      // For text responses, create shape with the text
+      if (placeTextCall) {
+        const textInput = placeTextCall.input as { text: string; position: string | { x: number; y: number } }
+        const selectionCtxJson = JSON.stringify(context)
+        const shapeId = createAIShape(editor, 'near_selection', selectionCtxJson)
+
+        // Update shape with the full text
+        const msgs = [{ role: 'assistant' as const, text: textInput.text, timestamp: Date.now() }]
+        editor.updateShape({
+          id: shapeId,
+          type: 'ai-text' as const,
+          props: { messages: JSON.stringify(msgs) },
+        })
       }
     } catch (error) {
       console.error('Canvas AI error:', error)
@@ -231,6 +244,9 @@ export function AIActionBar({
             w: 280,
             h: 40,
             text: `Error: ${error instanceof Error ? error.message : 'Something went wrong'}`,
+            messages: '[]',
+            selectionContext: '{}',
+            title: '',
           },
         })
       }
