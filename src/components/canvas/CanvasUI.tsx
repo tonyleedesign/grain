@@ -4,33 +4,71 @@
 // Manages DNA panel visibility based on frame selection.
 // Reference: grain-prd.md Section 11.3
 
-import { useState, useEffect, useRef, useCallback, MutableRefObject } from 'react'
-import { useEditor, useValue } from 'tldraw'
+import { useState, useEffect, useCallback } from 'react'
+import { useEditor, useValue, TLShapeId } from 'tldraw'
 import { RotateCcw } from 'lucide-react'
 import { AIActionBar } from './AIActionBar'
 import { GrainSelectionToolbar } from './GrainSelectionToolbar'
 import { DNAPanelV2 } from '../dna/DNAPanelV2'
 import { useTheme } from '@/context/ThemeContext'
+import { applyBoardLinkToShape, findContainingBoardFrame, getBoardIdFromMeta } from '@/lib/board-identity'
+
+interface ActiveBoard {
+  boardId?: string
+  boardName: string
+  frameShapeId: TLShapeId
+}
 
 interface CanvasUIProps {
   canvasId: string
-  askAIRef: MutableRefObject<() => void>
 }
 
-export function CanvasUI({ canvasId, askAIRef }: CanvasUIProps) {
+export function CanvasUI({ canvasId }: CanvasUIProps) {
   const editor = useEditor()
   const { isDefaultTheme, resetTheme } = useTheme()
-  const [activeBoardName, setActiveBoardName] = useState<string | null>(null)
+  const [activeBoard, setActiveBoard] = useState<ActiveBoard | null>(null)
   const [panelVisible, setPanelVisible] = useState(false)
   const [toolbarAI, setToolbarAI] = useState(false)
   const [aiBarVisible, setAiBarVisible] = useState(false)
   const [revertAnchor, setRevertAnchor] = useState<{ left: number; top: number } | null>(null)
-  const lastBoardName = useRef<string | null>(null)
+  const [lastBoardName, setLastBoardName] = useState<string | null>(null)
 
   // Wire the AI button callbacks (image toolbar, context menu, selection toolbar)
   useEffect(() => {
-    askAIRef.current = () => setToolbarAI(true)
-  }, [askAIRef])
+    const handleAskAI = () => setToolbarAI(true)
+    window.addEventListener('grain:ask-ai', handleAskAI)
+    return () => window.removeEventListener('grain:ask-ai', handleAskAI)
+  }, [])
+
+  useEffect(() => {
+    const shouldLinkShape = (shapeId: TLShapeId) => {
+      const shape = editor.getShape(shapeId)
+      if (!shape || shape.type === 'frame') return
+
+      const containingFrame = findContainingBoardFrame(editor, shape)
+      if (!containingFrame) return
+
+      const boardId = getBoardIdFromMeta(containingFrame)
+      if (!boardId) return
+
+      applyBoardLinkToShape(editor, shape, boardId)
+    }
+
+    const removeCreate = editor.sideEffects.registerAfterCreateHandler('shape', (shape, source) => {
+      if (source !== 'user') return
+      shouldLinkShape(shape.id)
+    })
+
+    const removeChange = editor.sideEffects.registerAfterChangeHandler('shape', (_prev, next, source) => {
+      if (source !== 'user') return
+      shouldLinkShape(next.id)
+    })
+
+    return () => {
+      removeCreate()
+      removeChange()
+    }
+  }, [editor])
 
   // Watch for selection changes reactively
   const selectedShapes = useValue(
@@ -45,15 +83,25 @@ export function CanvasUI({ canvasId, askAIRef }: CanvasUIProps) {
       const frame = selectedShapes[0]
       const name = (frame.props as { name?: string }).name
       if (name) {
-        setActiveBoardName(name)
-        lastBoardName.current = name
-        setPanelVisible(true)
+        const animationFrame = window.requestAnimationFrame(() => {
+          setActiveBoard({
+            boardId: getBoardIdFromMeta(frame),
+            boardName: name,
+            frameShapeId: frame.id,
+          })
+          setLastBoardName(name)
+          setPanelVisible(true)
+        })
+        return () => window.cancelAnimationFrame(animationFrame)
         return
       }
     }
     // Nothing selected — hide the panel but keep it mounted
     if (selectedShapes.length === 0) {
-      setPanelVisible(false)
+      const animationFrame = window.requestAnimationFrame(() => {
+        setPanelVisible(false)
+      })
+      return () => window.cancelAnimationFrame(animationFrame)
     }
   }, [selectedShapes])
 
@@ -64,8 +112,12 @@ export function CanvasUI({ canvasId, askAIRef }: CanvasUIProps) {
     if (frame) {
       const name = (frame.props as { name?: string }).name
       if (name) {
-        setActiveBoardName(name)
-        lastBoardName.current = name
+        setActiveBoard({
+          boardId: getBoardIdFromMeta(frame),
+          boardName: name,
+          frameShapeId: frame.id,
+        })
+        setLastBoardName(name)
         setPanelVisible(true)
       }
     }
@@ -73,11 +125,10 @@ export function CanvasUI({ canvasId, askAIRef }: CanvasUIProps) {
 
   const handleAskAI = useCallback(() => setToolbarAI(true), [])
 
-  const boardToRender = activeBoardName || lastBoardName.current
+  const boardToRender = activeBoard?.boardName || lastBoardName
 
   useEffect(() => {
     if (isDefaultTheme) {
-      setRevertAnchor(null)
       return
     }
 
@@ -149,14 +200,14 @@ export function CanvasUI({ canvasId, askAIRef }: CanvasUIProps) {
         onForceExpandedConsumed={() => setToolbarAI(false)}
         onVisibilityChange={setAiBarVisible}
       />
-      {boardToRender && (
-        <div style={{ display: panelVisible ? 'contents' : 'none' }}>
-          <DNAPanelV2
-            boardName={boardToRender}
-            canvasId={canvasId}
-            onClose={() => setPanelVisible(false)}
-          />
-        </div>
+      {boardToRender && panelVisible && (
+        <DNAPanelV2
+          boardName={boardToRender}
+          boardId={activeBoard?.boardId}
+          frameShapeId={activeBoard?.frameShapeId}
+          canvasId={canvasId}
+          onClose={() => setPanelVisible(false)}
+        />
       )}
     </>
   )

@@ -67,63 +67,69 @@ export async function organizeImages(
 
   const result: OrganizeAPIResult = await response.json()
 
-  // Create frames and group images on the canvas
-  editor.run(() => {
-    for (const board of result.boards) {
-      // Find the images belonging to this board
-      const boardImages = board.image_ids
-        .map((id) => ungrouped.find((s) => s.id === id))
-        .filter(Boolean) as TLImageShape[]
+  for (const board of result.boards) {
+    const boardImages = board.image_ids
+      .map((id) => ungrouped.find((s) => s.id === id))
+      .filter(Boolean) as TLImageShape[]
 
-      if (boardImages.length === 0) continue
+    if (boardImages.length === 0) continue
 
-      // Calculate board position — center of where the images currently are
-      const avgX =
-        boardImages.reduce((sum, img) => sum + img.x, 0) / boardImages.length
-      const avgY =
-        boardImages.reduce((sum, img) => sum + img.y, 0) / boardImages.length
+    const avgX =
+      boardImages.reduce((sum, img) => sum + img.x, 0) / boardImages.length
+    const avgY =
+      boardImages.reduce((sum, img) => sum + img.y, 0) / boardImages.length
 
-      // Scale images to consistent row height, preserving aspect ratios
-      const scaled = boardImages.map((img) => {
-        const aspect = img.props.w / (img.props.h || 1)
-        const w = Math.round(ROW_HEIGHT * aspect)
-        return { img, w, h: ROW_HEIGHT }
-      })
+    const scaled = boardImages.map((img) => {
+      const aspect = img.props.w / (img.props.h || 1)
+      const w = Math.round(ROW_HEIGHT * aspect)
+      return { img, w, h: ROW_HEIGHT }
+    })
 
-      // Pack into rows that don't exceed MAX_ROW_WIDTH
-      const imageRows: typeof scaled[] = []
-      let currentRow: typeof scaled = []
-      let currentRowWidth = 0
+    const imageRows: typeof scaled[] = []
+    let currentRow: typeof scaled = []
+    let currentRowWidth = 0
 
-      for (const item of scaled) {
-        const itemTotalWidth = currentRow.length > 0 ? IMAGE_GAP + item.w : item.w
-        if (currentRowWidth + itemTotalWidth > MAX_ROW_WIDTH && currentRow.length > 0) {
-          imageRows.push(currentRow)
-          currentRow = [item]
-          currentRowWidth = item.w
-        } else {
-          currentRow.push(item)
-          currentRowWidth += itemTotalWidth
-        }
+    for (const item of scaled) {
+      const itemTotalWidth = currentRow.length > 0 ? IMAGE_GAP + item.w : item.w
+      if (currentRowWidth + itemTotalWidth > MAX_ROW_WIDTH && currentRow.length > 0) {
+        imageRows.push(currentRow)
+        currentRow = [item]
+        currentRowWidth = item.w
+      } else {
+        currentRow.push(item)
+        currentRowWidth += itemTotalWidth
       }
-      if (currentRow.length > 0) imageRows.push(currentRow)
+    }
+    if (currentRow.length > 0) imageRows.push(currentRow)
 
-      // Calculate frame size from packed rows
-      const rowWidths = imageRows.map((row) =>
-        row.reduce((sum, item) => sum + item.w, 0) + (row.length - 1) * IMAGE_GAP
-      )
-      const maxRowWidth = Math.max(...rowWidths)
-      const totalHeight = imageRows.length * ROW_HEIGHT + (imageRows.length - 1) * IMAGE_GAP
-      const frameW = maxRowWidth + BOARD_PADDING * 2
-      const frameH = totalHeight + BOARD_PADDING * 2 + 40
+    const rowWidths = imageRows.map((row) =>
+      row.reduce((sum, item) => sum + item.w, 0) + (row.length - 1) * IMAGE_GAP
+    )
+    const maxRowWidth = Math.max(...rowWidths)
+    const totalHeight = imageRows.length * ROW_HEIGHT + (imageRows.length - 1) * IMAGE_GAP
+    const frameW = maxRowWidth + BOARD_PADDING * 2
+    const frameH = totalHeight + BOARD_PADDING * 2 + 40
 
-      // Create the frame (board container)
-      const frameId = createShapeId()
+    const frameId = createShapeId()
+    const createBoardResponse = await fetch('/api/boards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: board.board_name, canvasId, frameShapeId: frameId }),
+    })
+
+    if (!createBoardResponse.ok) {
+      throw new Error('Failed to create board record')
+    }
+
+    const { id: boardId } = await createBoardResponse.json()
+
+    editor.run(() => {
       editor.createShape({
         id: frameId,
         type: 'frame',
         x: avgX - frameW / 2,
         y: avgY - frameH / 2,
+        meta: { boardId },
         props: {
           w: frameW,
           h: frameH,
@@ -131,7 +137,6 @@ export async function organizeImages(
         },
       })
 
-      // Place each image at its calculated position
       let rowY = BOARD_PADDING + 40
       for (const row of imageRows) {
         let x = BOARD_PADDING
@@ -152,8 +157,8 @@ export async function organizeImages(
         }
         rowY += ROW_HEIGHT + IMAGE_GAP
       }
-    }
-  })
+    })
+  }
 
   return result
 }

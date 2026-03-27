@@ -10,6 +10,80 @@ const IMAGE_GAP = 12
 const ROW_HEIGHT = 250
 const MAX_ROW_WIDTH = 900
 const AI_TEXT_OFFSET = 24
+const VIEWPORT_PADDING = 24
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function getAIPlacement(
+  editor: Editor,
+  width: number,
+  height: number,
+  position: 'near_selection' | { x: number; y: number }
+): { x: number; y: number } {
+  if (position !== 'near_selection') {
+    return position
+  }
+
+  const viewport = editor.getViewportPageBounds()
+  const selection = editor.getSelectionPageBounds()
+  const selectedShapes = editor.getSelectedShapes()
+
+  if (!selection) {
+    return {
+      x: clamp(viewport.midX - width / 2, viewport.minX + VIEWPORT_PADDING, viewport.maxX - width - VIEWPORT_PADDING),
+      y: clamp(viewport.midY - height / 2, viewport.minY + VIEWPORT_PADDING, viewport.maxY - height - VIEWPORT_PADDING),
+    }
+  }
+
+  let anchorBounds = selection
+  const selectedFrames = selectedShapes.filter((shape) => shape.type === 'frame')
+
+  if (selectedFrames.length === 1) {
+    anchorBounds = editor.getShapePageBounds(selectedFrames[0]) ?? selection
+  } else if (selectedFrames.length === 0 && selectedShapes.length > 0) {
+    const parentFrameIds = [...new Set(
+      selectedShapes
+        .map((shape) => editor.getShape(shape.parentId as TLShapeId))
+        .filter((parent): parent is Exclude<typeof parent, null | undefined> => Boolean(parent && parent.type === 'frame'))
+        .map((frame) => frame.id as TLShapeId)
+    )]
+
+    if (parentFrameIds.length === 1) {
+      anchorBounds = editor.getShapePageBounds(parentFrameIds[0]) ?? selection
+    }
+  }
+
+  const preferredRightX = anchorBounds.maxX + AI_TEXT_OFFSET
+  const preferredLeftX = anchorBounds.minX - width - AI_TEXT_OFFSET
+  const preferredY = anchorBounds.minY
+
+  const fitsRight = preferredRightX + width <= viewport.maxX - VIEWPORT_PADDING
+  const fitsLeft = preferredLeftX >= viewport.minX + VIEWPORT_PADDING
+
+  let x: number
+  if (fitsRight) {
+    x = preferredRightX
+  } else if (fitsLeft) {
+    x = preferredLeftX
+  } else {
+    const selectionAnchorX = anchorBounds.midX - width / 2
+    x = clamp(
+      selectionAnchorX,
+      viewport.minX + VIEWPORT_PADDING,
+      viewport.maxX - width - VIEWPORT_PADDING
+    )
+  }
+
+  const y = clamp(
+    preferredY,
+    viewport.minY + VIEWPORT_PADDING,
+    viewport.maxY - height - VIEWPORT_PADDING
+  )
+
+  return { x, y }
+}
 
 interface ExecutionResult {
   success: boolean
@@ -69,29 +143,15 @@ function executePlaceText(
   editor: Editor,
   params: { text: string; position: string | { x: number; y: number } }
 ): ExecutionResult {
-  let x: number
-  let y: number
-
-  if (params.position === 'near_selection') {
-    const bounds = editor.getSelectionPageBounds()
-    if (bounds) {
-      x = bounds.maxX + AI_TEXT_OFFSET
-      y = bounds.minY
-    } else {
-      // Fallback: center of viewport
-      const viewport = editor.getViewportPageBounds()
-      x = viewport.midX
-      y = viewport.midY
-    }
-  } else {
-    const pos = params.position as { x: number; y: number }
-    x = pos.x
-    y = pos.y
-  }
-
   // Estimate height from text length (rough: 20px per line, ~50 chars per line at 320w)
+  const width = 320
   const estimatedLines = Math.max(1, Math.ceil(params.text.length / 50))
   const estimatedHeight = estimatedLines * 20 + 24
+  const placement =
+    params.position === 'near_selection'
+      ? 'near_selection'
+      : (params.position as { x: number; y: number })
+  const { x, y } = getAIPlacement(editor, width, estimatedHeight, placement)
 
   const shapeId = createShapeId()
   editor.createShape({
@@ -100,20 +160,26 @@ function executePlaceText(
     x,
     y,
     props: {
-      w: 320,
+      w: width,
       h: estimatedHeight,
       text: params.text,
+      messages: '[]',
+      selectionContext: '{}',
+      title: '',
+      canvasId: '',
+      mode: 'simple',
+      status: 'idle',
     },
   })
 
   return { success: true, message: 'Text placed on canvas' }
 }
 
-function executeGroupImages(
+async function executeGroupImages(
   editor: Editor,
   params: { name: string },
   canvasId: string
-): ExecutionResult {
+): Promise<ExecutionResult> {
   const selected = editor.getSelectedShapes()
   const images = selected.filter((s): s is TLImageShape => {
     if (s.type !== 'image') return false
@@ -164,6 +230,19 @@ function executeGroupImages(
   const avgY = images.reduce((sum, img) => sum + img.y, 0) / images.length
 
   const frameId = createShapeId()
+  let boardId = ''
+  try {
+    const response = await fetch('/api/boards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: params.name, canvasId, frameShapeId: frameId }),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      boardId = data.id || ''
+    }
+  } catch {}
 
   editor.run(() => {
     editor.createShape({
@@ -171,6 +250,7 @@ function executeGroupImages(
       type: 'frame',
       x: avgX - frameW / 2,
       y: avgY - frameH / 2,
+      meta: boardId ? { boardId } : {},
       props: { w: frameW, h: frameH, name: params.name },
     })
 
@@ -192,13 +272,6 @@ function executeGroupImages(
     }
   })
 
-  // Save board to Supabase (fire-and-forget)
-  fetch('/api/boards', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: params.name, canvasId }),
-  }).catch((err) => console.error('Board save error:', err))
-
   editor.select(frameId)
 
   return { success: true, message: `Grouped ${images.length} images into "${params.name}"` }
@@ -217,7 +290,8 @@ async function executeRenameBoard(
   }
 
   const oldName = (frame.props as { name?: string }).name
-  if (!oldName) {
+  const boardId = (frame.meta as { boardId?: string } | undefined)?.boardId
+  if (!oldName && !boardId) {
     return { success: false, message: 'Selected board has no name' }
   }
 
@@ -226,6 +300,7 @@ async function executeRenameBoard(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       canvasId,
+      boardId,
       oldName,
       newName: params.newName,
     }),
@@ -251,26 +326,13 @@ async function executeRenameBoard(
 export function createAIShape(
   editor: Editor,
   position: 'near_selection' | { x: number; y: number },
-  selectionContext: string
+  selectionContext: string,
+  canvasId: string,
+  boardId = ''
 ): TLShapeId {
-  let x: number
-  let y: number
-
-  if (position === 'near_selection') {
-    const bounds = editor.getSelectionPageBounds()
-    if (bounds) {
-      x = bounds.maxX + AI_TEXT_OFFSET
-      y = bounds.minY
-    } else {
-      const viewport = editor.getViewportPageBounds()
-      x = viewport.midX
-      y = viewport.midY
-    }
-  } else {
-    x = position.x
-    y = position.y
-  }
-
+  const width = 360
+  const height = 40
+  const { x, y } = getAIPlacement(editor, width, height, position)
   const shapeId = createShapeId()
   const initialMessage: ChatMessage[] = [
     { role: 'assistant', text: '', timestamp: Date.now() },
@@ -282,12 +344,16 @@ export function createAIShape(
     x,
     y,
     props: {
-      w: 360,
-      h: 40,
+      w: width,
+      h: height,
       text: '',
       messages: JSON.stringify(initialMessage),
       selectionContext,
       title: '',
+      canvasId,
+      boardId,
+      mode: 'simple',
+      status: 'waiting',
     },
   })
 
@@ -339,21 +405,48 @@ export async function streamToShape(
               editor.updateShape({
                 id: shapeId,
                 type: 'ai-text',
-                props: { messages: JSON.stringify(messages) },
+                props: {
+                  messages: JSON.stringify(messages),
+                  status: shape.props.status === 'waiting' ? 'streaming' : shape.props.status,
+                },
               })
             }
           } else if (data.type === 'tool_call') {
             toolCalls.push({ name: data.name, input: data.input })
           } else if (data.type === 'error') {
             console.error('[streamToShape] SSE error:', data.message)
+            const shape = editor.getShape(shapeId) as AITextShape | undefined
+            if (shape) {
+              editor.updateShape({
+                id: shapeId,
+                type: 'ai-text',
+                props: { status: 'idle' },
+              })
+            }
+          } else if (data.type === 'done') {
+            const shape = editor.getShape(shapeId) as AITextShape | undefined
+            if (shape) {
+              editor.updateShape({
+                id: shapeId,
+                type: 'ai-text',
+                props: { status: 'idle' },
+              })
+            }
           }
-          // 'done' type — loop will end naturally
         } catch {
           // Skip malformed events
         }
       }
     }
   } finally {
+    const shape = editor.getShape(shapeId) as AITextShape | undefined
+    if (shape && shape.props.status !== 'idle') {
+      editor.updateShape({
+        id: shapeId,
+        type: 'ai-text',
+        props: { status: 'idle' },
+      })
+    }
     reader.releaseLock()
   }
 

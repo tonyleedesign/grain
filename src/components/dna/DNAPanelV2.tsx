@@ -5,9 +5,10 @@
 // Reference: grain-prd.md Section 11.3
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useEditor, createShapeId } from 'tldraw'
+import { createPortal } from 'react-dom'
+import { useEditor, createShapeId, TLShapeId, TldrawUiIcon } from 'tldraw'
 import { motion } from 'framer-motion'
-import { X, GripVertical, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-react'
+import { X, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Medium, WebAppDNA, ImageGenDNA } from '@/types/dna'
@@ -22,15 +23,17 @@ type PanelState = 'idle' | 'needs_medium' | 'extracting' | 'ready' | 'error'
 
 interface DNAPanelV2Props {
   boardName: string
+  boardId?: string
+  frameShapeId?: TLShapeId
   canvasId: string
   onClose: () => void
 }
 
-export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
+export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, canvasId, onClose }: DNAPanelV2Props) {
   const editor = useEditor()
   const { setTheme, resetTheme, isDefaultTheme } = useTheme()
   const [state, setState] = useState<PanelState>('idle')
-  const [boardId, setBoardId] = useState<string | null>(null)
+  const [boardId, setBoardId] = useState<string | null>(initialBoardId || null)
   const [medium, setMedium] = useState<Medium | null>(null)
   const [useCase, setUseCase] = useState<string>('')
   const [dna, setDna] = useState<WebAppDNA | ImageGenDNA | null>(null)
@@ -43,9 +46,14 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
   const [feedback, setFeedback] = useState<string | null>(null)
   const [showRegenPrompt, setShowRegenPrompt] = useState(false)
   const [regenReason, setRegenReason] = useState('')
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
   // Track which board we last loaded to avoid redundant fetches
   const [loadedBoardName, setLoadedBoardName] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setPortalTarget(document.querySelector('.tlui-layout') as HTMLElement | null)
+  }, [])
 
   // Intercept clipboard and keyboard events at the native DOM level to prevent
   // tldraw's document-level listeners from capturing copy/paste inside the panel.
@@ -84,17 +92,42 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
     setLoadedBoardName(boardName)
 
     // Get image URLs from the frame
-    const urls = getBoardImageUrls(editor, boardName)
+    const urls = getBoardImageUrls(editor, { boardId: initialBoardId, frameId: frameShapeId, frameName: boardName })
     setImageUrls(urls)
 
-    // Fetch board from API
-    fetch(`/api/boards?name=${encodeURIComponent(boardName)}&canvasId=${encodeURIComponent(canvasId)}`)
+    const params = new URLSearchParams({ canvasId })
+    if (initialBoardId) params.set('boardId', initialBoardId)
+    else {
+      if (frameShapeId) params.set('frameShapeId', frameShapeId)
+      params.set('name', boardName)
+    }
+
+    fetch(`/api/boards?${params.toString()}`)
       .then((res) => {
         if (!res.ok) throw new Error('Board not found')
         return res.json()
       })
       .then((data) => {
         setBoardId(data.id)
+        if (frameShapeId) {
+          const frame = editor.getShape(frameShapeId)
+          const currentBoardId = (frame?.meta as { boardId?: string } | undefined)?.boardId
+          if (frame?.type === 'frame' && currentBoardId !== data.id) {
+            editor.updateShape({
+              id: frameShapeId,
+              type: 'frame',
+              meta: { ...(frame.meta || {}), boardId: data.id },
+            })
+          }
+
+          if (data.frame_shape_id !== frameShapeId) {
+            fetch('/api/boards', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ canvasId, boardId: data.id, frameShapeId }),
+            }).catch(() => {})
+          }
+        }
         if (data.needs_extraction) {
           setState('needs_medium')
         } else {
@@ -120,7 +153,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       .catch(() => {
         setState('needs_medium')
       })
-  }, [boardName, canvasId, editor, loadedBoardName])
+  }, [boardName, canvasId, editor, frameShapeId, initialBoardId, loadedBoardName])
 
   const extractDNA = useCallback(
     async (selectedMedium: Medium, selectedUseCase: string, selectedSourceContext?: string, selectedAppealContext?: string) => {
@@ -138,6 +171,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            boardId,
             boardName,
             canvasId,
             medium: selectedMedium,
@@ -164,7 +198,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         setState('error')
       }
     },
-    [boardName, canvasId, imageUrls, feedback]
+    [boardId, boardName, canvasId, imageUrls, feedback]
   )
 
   const handleRegenerate = useCallback((reason?: string) => {
@@ -182,6 +216,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        boardId,
         boardName,
         canvasId,
         medium,
@@ -209,16 +244,13 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         setError(err instanceof Error ? err.message : 'Extraction failed')
         setState('error')
       })
-  }, [medium, boardName, canvasId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna])
+  }, [boardId, medium, boardName, canvasId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna])
 
   const handleDetach = useCallback(() => {
     if (!dna || !medium || !boardName) return
 
     // Find the frame on canvas to position snapshot nearby
-    const allShapes = editor.getCurrentPageShapes()
-    const frame = allShapes.find(
-      (s) => s.type === 'frame' && (s.props as { name?: string }).name === boardName
-    )
+    const frame = frameShapeId ? editor.getShape(frameShapeId) : null
     const offsetX = frame ? frame.x + ((frame.props as { w?: number }).w || 0) + 40 : 200
     const offsetY = frame ? frame.y : 200
 
@@ -244,6 +276,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       props: {
         w: 240,
         h: 320,
+        boardId: boardId || '',
         boardName,
         medium,
         directionSummary: dna.direction_summary || '',
@@ -253,9 +286,9 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
         fontInfo,
       },
     })
-  }, [dna, medium, boardName, editor])
+  }, [boardId, dna, medium, boardName, editor, frameShapeId])
 
-  return (
+  const panelContent = (
     <motion.div
       ref={panelRef}
       key="dna-panel"
@@ -263,8 +296,11 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
       transition={{ type: 'tween', duration: 0.2, ease: 'easeInOut' }}
-      className="grain-dna-panel fixed top-0 right-0 w-1/3 min-w-80 h-screen flex flex-col z-1000"
+      className="grain-dna-panel fixed top-0 right-0 w-1/3 min-w-80 h-screen flex flex-col"
       style={{
+        zIndex: 'var(--tl-layer-panels)',
+        pointerEvents: 'all',
+        touchAction: 'auto',
         backgroundColor: 'var(--color-surface)',
         boxShadow: 'var(--shadow-panel)',
         borderRadius: 'var(--radius-lg) 0 0 var(--radius-lg)',
@@ -307,7 +343,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
             </PanelIconButton>
           )}
           <PanelIconButton title="Detach as snapshot" onClick={handleDetach}>
-            <GripVertical size={14} />
+            <TldrawUiIcon icon="tool-screenshot" label="Detach as snapshot" />
           </PanelIconButton>
           <PanelIconButton title="Close" onClick={() => { editor.selectNone(); onClose() }}>
             <X size={14} />
@@ -470,6 +506,10 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
       )}
     </motion.div>
   )
+
+  if (!portalTarget) return null
+
+  return createPortal(panelContent, portalTarget)
 }
 
 function PanelIconButton({

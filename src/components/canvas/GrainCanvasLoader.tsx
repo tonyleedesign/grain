@@ -14,6 +14,7 @@ interface GrainCanvasLoaderProps {
   canvasType: 'community' | 'private'
   canvasId: string
   uploadedBy?: string | null
+  accessToken?: string | null
 }
 
 export function GrainCanvasLoader(props: GrainCanvasLoaderProps) {

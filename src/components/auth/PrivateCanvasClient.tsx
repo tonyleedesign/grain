@@ -76,7 +76,12 @@ export function PrivateCanvasClient() {
 
   return (
     <div className="relative h-screen w-screen">
-      <GrainCanvasLoader canvasType="private" canvasId={canvasId} uploadedBy={user?.email ?? user?.id ?? null} />
+      <GrainCanvasLoader
+        canvasType="private"
+        canvasId={canvasId}
+        uploadedBy={user?.email ?? user?.id ?? null}
+        accessToken={session?.access_token ?? null}
+      />
     </div>
   )
 }

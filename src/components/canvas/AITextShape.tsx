@@ -12,12 +12,13 @@ import {
   T,
   RecordProps,
   useEditor,
-  useValue,
   TLShapeId,
+  TLResizeInfo,
+  resizeBox,
 } from 'tldraw'
 import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from '@tldraw/tlschema'
-import { Reply, Send, Minus } from 'lucide-react'
-import { ChatMessage, CanvasAIChatRequest, CanvasAIToolCall } from '@/types/canvas-ai'
+import { Reply, Send, Minus, Pencil, Check } from 'lucide-react'
+import { ChatMessage, CanvasAIChatRequest, CanvasAIToolCall, CanvasAISelectionContext } from '@/types/canvas-ai'
 import { buildSelectionContext } from '@/lib/selection-context'
 import { streamToShape, executeToolCalls } from '@/lib/canvas-ai-executor'
 import { AISparkleIcon } from './AISparkleIcon'
@@ -37,6 +38,10 @@ interface AITextProps {
   messages: string        // JSON stringified ChatMessage[]
   selectionContext: string // JSON stringified — snapshot of original selection context
   title: string           // auto-generated, user-editable
+  canvasId: string
+  boardId: string
+  mode: 'simple' | 'chat'
+  status: 'idle' | 'waiting' | 'streaming'
 }
 
 export type AITextShape = TLBaseShape<'ai-text', AITextProps>
@@ -48,12 +53,18 @@ export const aiTextProps: RecordProps<AITextShape> = {
   messages: T.string,
   selectionContext: T.string,
   title: T.string,
+  canvasId: T.string,
+  boardId: T.string,
+  mode: T.literalEnum('simple', 'chat'),
+  status: T.literalEnum('idle', 'waiting', 'streaming'),
 }
 
 // --- Shape migrations (handle old shapes missing new props) ---
 
 const versions = createShapePropsMigrationIds('ai-text', {
   AddChatFields: 1,
+  AddInteractionFields: 2,
+  AddBoardRelationship: 3,
 })
 
 const aiTextMigrations = createShapePropsMigrationSequence({
@@ -71,6 +82,35 @@ const aiTextMigrations = createShapePropsMigrationSequence({
         delete props.title
       },
     },
+    {
+      id: versions.AddInteractionFields,
+      up: (props: Record<string, unknown>) => {
+        if (props.canvasId === undefined) props.canvasId = ''
+        if (props.mode === undefined) {
+          let mode: 'simple' | 'chat' = 'simple'
+          try {
+            const messages = JSON.parse(String(props.messages ?? '[]')) as ChatMessage[]
+            if (messages.length > 1) mode = 'chat'
+          } catch {}
+          props.mode = mode
+        }
+        if (props.status === undefined) props.status = 'idle'
+      },
+      down: (props: Record<string, unknown>) => {
+        delete props.canvasId
+        delete props.mode
+        delete props.status
+      },
+    },
+    {
+      id: versions.AddBoardRelationship,
+      up: (props: Record<string, unknown>) => {
+        if (props.boardId === undefined) props.boardId = ''
+      },
+      down: (props: Record<string, unknown>) => {
+        delete props.boardId
+      },
+    },
   ],
 })
 
@@ -86,10 +126,85 @@ export function getMessages(shape: AITextShape): ChatMessage[] {
   return []
 }
 
-function getCanvasId(): string {
-  if (typeof window === 'undefined') return ''
-  const match = window.location.pathname.match(/\/canvas\/([^/]+)/)
-  return match?.[1] || ''
+function stopControlPointerEvent(e: React.PointerEvent | React.MouseEvent) {
+  e.stopPropagation()
+}
+
+function getSimpleModeText(messages: ChatMessage[]): string {
+  if (messages.length <= 1) {
+    return messages[0]?.text || ''
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && messages[i].text.trim()) {
+      return messages[i].text
+    }
+  }
+
+  return messages[messages.length - 1]?.text || ''
+}
+
+function getBoardHintFromSelectionContext(selectionContext: string): { boardId?: string; boardName?: string } | null {
+  try {
+    const context = JSON.parse(selectionContext) as CanvasAISelectionContext
+
+    if (context.selectedImages?.boardId || context.selectedImages?.boardName) {
+      return {
+        boardId: context.selectedImages.boardId,
+        boardName: context.selectedImages.boardName,
+      }
+    }
+
+    if (context.selectedBoards?.boards?.length === 1) {
+      const board = context.selectedBoards.boards[0]
+      return {
+        boardId: board.id,
+        boardName: board.name,
+      }
+    }
+
+    if (context.selectedBoards?.names?.length === 1) {
+      return { boardName: context.selectedBoards.names[0] }
+    }
+  } catch {}
+
+  return null
+}
+
+function useBackfillBoardRelationship(shape: AITextShape) {
+  const editor = useEditor()
+  const attemptedRef = useRef(false)
+
+  useEffect(() => {
+    if (shape.props.boardId || !shape.props.canvasId || attemptedRef.current) return
+
+    const boardHint = getBoardHintFromSelectionContext(shape.props.selectionContext)
+    if (!boardHint?.boardId && !boardHint?.boardName) {
+      attemptedRef.current = true
+      return
+    }
+
+    attemptedRef.current = true
+
+    const params = new URLSearchParams({ canvasId: shape.props.canvasId })
+    if (boardHint.boardId) params.set('boardId', boardHint.boardId)
+    else if (boardHint.boardName) params.set('name', boardHint.boardName)
+
+    fetch(`/api/boards?${params.toString()}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Board not found')
+        return res.json()
+      })
+      .then((data: { id?: string }) => {
+        if (!data.id) return
+        editor.updateShape({
+          id: shape.id,
+          type: 'ai-text',
+          props: { boardId: data.id },
+        })
+      })
+      .catch(() => {})
+  }, [editor, shape.id, shape.props.boardId, shape.props.canvasId, shape.props.selectionContext])
 }
 
 async function generateTitle(
@@ -143,6 +258,8 @@ async function sendChatMessage(
     props: {
       messages: JSON.stringify(messages),
       h: 280, // Ensure chat mode height
+      mode: 'chat',
+      status: 'waiting',
     },
   })
 
@@ -167,7 +284,7 @@ async function sendChatMessage(
     editor.updateShape({
       id: shapeId,
       type: 'ai-text',
-      props: { messages: JSON.stringify(messages) },
+      props: { messages: JSON.stringify(messages), status: 'idle' },
     })
     return
   }
@@ -190,44 +307,42 @@ async function sendChatMessage(
   }
 }
 
-/** Auto-enter editing mode when this shape is selected so clicks reach React content */
-function useAutoEdit(shapeId: TLShapeId) {
+function useAutoTitle(shape: AITextShape, messages: ChatMessage[]) {
   const editor = useEditor()
-  const isSelected = useValue(
-    'isSelected',
-    () => editor.getSelectedShapeIds().includes(shapeId),
-    [editor, shapeId]
-  )
-  const isEditing = useValue(
-    'isEditing',
-    () => editor.getEditingShapeId() === shapeId,
-    [editor, shapeId]
-  )
+  const lastRequestKey = useRef<string | null>(null)
 
   useEffect(() => {
-    if (isSelected && !isEditing) {
-      editor.setEditingShape(shapeId)
-    }
-  }, [editor, shapeId, isSelected, isEditing])
+    if (shape.props.title || shape.props.status !== 'idle') return
+
+    const hasAssistantContent = messages.some(
+      (msg) => msg.role === 'assistant' && msg.text.trim().length > 0
+    )
+    if (!hasAssistantContent) return
+
+    const requestKey = `${shape.id}:${messages.length}:${messages[messages.length - 1]?.text.length ?? 0}`
+    if (lastRequestKey.current === requestKey) return
+    lastRequestKey.current = requestKey
+
+    generateTitle(editor, shape.id as TLShapeId, messages)
+  }, [editor, messages, shape.id, shape.props.status, shape.props.title])
 }
 
 function SimpleMode({
   shape,
   messages,
-  isStreaming,
 }: {
   shape: AITextShape
   messages: ChatMessage[]
-  isStreaming: boolean
 }) {
   const editor = useEditor()
   const contentRef = useRef<HTMLDivElement>(null)
-  const text = messages[0]?.text || ''
+  const text = getSimpleModeText(messages)
   const hasContent = text.length > 0
+  useAutoTitle(shape, messages)
+  useBackfillBoardRelationship(shape)
 
   // Auto-size height to fit content (only in simple mode, not when switching to chat)
   useEffect(() => {
-    if (shape.props.h >= 200) return // User clicked reply — don't shrink back
     const el = contentRef.current
     if (!el || !hasContent) return
     const measured = el.scrollHeight
@@ -241,19 +356,23 @@ function SimpleMode({
   }, [editor, shape.id, shape.props.h, text, hasContent])
 
   let className = 'ai-card ai-card-simple'
-  if (!hasContent) {
+  if (shape.props.status === 'waiting') {
     className += ' ai-card-shimmer-active'
-  } else if (isStreaming) {
+  } else if (shape.props.status === 'streaming') {
     className += ' ai-card-shimmer-active ai-card-shimmer-streaming'
   }
 
-  const handleReply = useCallback(() => {
+  const handleReply = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    stopControlPointerEvent(e)
     editor.updateShape({
       id: shape.id,
       type: 'ai-text',
-      props: { h: 280 },
+      props: {
+        h: Math.max(280, shape.props.h),
+        mode: 'chat',
+      },
     })
-  }, [editor, shape.id])
+  }, [editor, shape.id, shape.props.h])
 
   return (
     <div
@@ -265,11 +384,17 @@ function SimpleMode({
         pointerEvents: 'all',
       }}
     >
-      {text || '\u00A0'}
-      {hasContent && !isStreaming && (
-        <button className="ai-card-reply-btn" title="Reply" onClick={handleReply}>
-          <Reply size={13} />
-        </button>
+      <div className="ai-card-simple__content">{text || '\u00A0'}</div>
+      {hasContent && shape.props.status === 'idle' && (
+        <div className="ai-card-simple__actions">
+          <button
+            className="ai-card-reply-btn"
+            title="Reply"
+            onPointerDown={handleReply}
+          >
+            <Reply size={13} />
+          </button>
+        </div>
       )}
     </div>
   )
@@ -285,20 +410,30 @@ function ChatMode({
   isStreaming: boolean
 }) {
   const editor = useEditor()
-  useAutoEdit(shape.id as TLShapeId)
   const [inputValue, setInputValue] = useState('')
-  const [isMinimized, setIsMinimized] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleValue, setTitleValue] = useState(shape.props.title || 'Chat')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const userScrolledRef = useRef(false)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  useAutoTitle(shape, messages)
+  useBackfillBoardRelationship(shape)
 
   // Auto-focus input when chat mode opens
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 100)
   }, [])
+
+  useEffect(() => {
+    if (editingTitle) {
+      setTimeout(() => {
+        titleInputRef.current?.focus()
+        titleInputRef.current?.select()
+      }, 0)
+    }
+  }, [editingTitle])
 
   // Auto-scroll to bottom on new messages (unless user scrolled up)
   useEffect(() => {
@@ -314,9 +449,21 @@ function ChatMode({
     userScrolledRef.current = scrollHeight - scrollTop - clientHeight > 40
   }, [])
 
+  const handleMessagesWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    e.preventDefault()
+
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    container.scrollTop += e.deltaY
+    container.scrollLeft += e.deltaX
+    handleScroll()
+  }, [handleScroll])
+
   const handleTitleBlur = useCallback(() => {
     setEditingTitle(false)
-    const trimmed = titleValue.trim() || 'Chat'
+    const trimmed = titleValue.trim() || (shape.props.title || 'Chat')
     if (trimmed !== shape.props.title) {
       editor.updateShape({
         id: shape.id,
@@ -330,35 +477,8 @@ function ChatMode({
     if (!inputValue.trim() || isStreaming) return
     const text = inputValue.trim()
     setInputValue('')
-    sendChatMessage(editor, shape.id as TLShapeId, text, getCanvasId())
-  }, [editor, shape.id, inputValue, isStreaming])
-
-  // If minimized, show last message in simple mode appearance
-  if (isMinimized) {
-    const lastMsg = messages[messages.length - 1]
-    return (
-      <div
-        className="ai-card ai-card-simple"
-        style={{
-          width: shape.props.w,
-          minHeight: 40,
-          pointerEvents: 'all',
-          cursor: 'pointer',
-        }}
-        onDoubleClick={() => setIsMinimized(false)}
-      >
-        {lastMsg?.text || '\u00A0'}
-        <button
-          className="ai-card-reply-btn"
-          style={{ opacity: 1 }}
-          onClick={() => setIsMinimized(false)}
-          title="Expand chat"
-        >
-          <Reply size={13} />
-        </button>
-      </div>
-    )
-  }
+    sendChatMessage(editor, shape.id as TLShapeId, text, shape.props.canvasId)
+  }, [editor, shape.id, shape.props.canvasId, inputValue, isStreaming])
 
   const shimmerClass = isStreaming ? ' ai-card-shimmer-active ai-card-shimmer-streaming' : ''
 
@@ -373,24 +493,60 @@ function ChatMode({
     >
       {/* Header */}
       <div className="ai-card-header">
-        <AISparkleIcon size={12} />
-        <input
-          className="ai-card-title"
-          value={editingTitle ? titleValue : (shape.props.title || 'Chat')}
-          onChange={(e) => { setEditingTitle(true); setTitleValue(e.target.value) }}
-          onFocus={() => { setEditingTitle(true); setTitleValue(shape.props.title || 'Chat') }}
-          onBlur={handleTitleBlur}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') e.currentTarget.blur()
-            if (e.key === 'Escape') { setEditingTitle(false); setTitleValue(shape.props.title || 'Chat') }
-          }}
-          title={shape.props.title || 'Chat'}
-        />
+        <div className="ai-card-header-icon">
+          <AISparkleIcon size={12} />
+        </div>
+        <div className="ai-card-title-row">
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              className="ai-card-title ai-card-title-input"
+              value={titleValue}
+              onChange={(e) => setTitleValue(e.target.value)}
+              onPointerDown={stopControlPointerEvent}
+              onBlur={handleTitleBlur}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') {
+                  setEditingTitle(false)
+                  setTitleValue(shape.props.title || 'Chat')
+                }
+              }}
+              title={shape.props.title || 'Chat'}
+            />
+          ) : (
+            <div className="ai-card-title" title={shape.props.title || 'Chat'}>
+              {shape.props.title || 'Chat'}
+            </div>
+          )}
+          <button
+            className="ai-card-header-btn"
+            onPointerDown={(e) => {
+              stopControlPointerEvent(e)
+              if (editingTitle) {
+                handleTitleBlur()
+                return
+              }
+              setTitleValue(shape.props.title || 'Chat')
+              setEditingTitle(true)
+            }}
+            title={editingTitle ? 'Save title' : 'Edit title'}
+          >
+            {editingTitle ? <Check size={12} /> : <Pencil size={12} />}
+          </button>
+        </div>
         <span className="ai-card-badge">{messages.length}</span>
         <button
-          className="ai-card-minimize"
-          onClick={() => setIsMinimized(true)}
+          className="ai-card-header-btn"
+          onPointerDown={(e) => {
+            stopControlPointerEvent(e)
+            editor.updateShape({
+              id: shape.id,
+              type: 'ai-text',
+              props: { mode: 'simple', h: 40 },
+            })
+          }}
           title="Minimize"
         >
           <Minus size={12} />
@@ -402,6 +558,7 @@ function ChatMode({
         className="ai-card-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
+        onWheelCapture={handleMessagesWheel}
       >
         {messages.map((msg, i) => (
           <div key={i} className={`ai-card-msg ai-card-msg-${msg.role}`}>
@@ -418,6 +575,7 @@ function ChatMode({
           className="ai-card-input"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
+          onPointerDown={stopControlPointerEvent}
           onKeyDown={(e) => {
             e.stopPropagation()
             if (e.key === 'Enter' && inputValue.trim() && !isStreaming) {
@@ -430,7 +588,10 @@ function ChatMode({
         <button
           className="ai-card-send"
           disabled={!inputValue.trim() || isStreaming}
-          onClick={handleSend}
+          onPointerDown={(e) => {
+            stopControlPointerEvent(e)
+            handleSend()
+          }}
         >
           <Send size={11} />
         </button>
@@ -445,11 +606,9 @@ export class AITextShapeUtil extends ShapeUtil<AITextShape> {
   static override migrations = aiTextMigrations
 
   getGeometry(shape: AITextShape) {
-    const messages = getMessages(shape)
-    const isChat = messages.length > 1
     return new Rectangle2d({
       width: shape.props.w,
-      height: isChat ? Math.max(200, shape.props.h) : shape.props.h,
+      height: shape.props.mode === 'chat' ? Math.max(200, shape.props.h) : shape.props.h,
       isFilled: true,
     })
   }
@@ -462,24 +621,32 @@ export class AITextShapeUtil extends ShapeUtil<AITextShape> {
       messages: '[]',
       selectionContext: '{}',
       title: '',
+      canvasId: '',
+      boardId: '',
+      mode: 'simple',
+      status: 'idle',
     }
   }
 
   override canResize() { return true }
-  override canEdit() { return true }
+  override canEdit() { return false }
+
+  override onResize(shape: AITextShape, info: TLResizeInfo<AITextShape>) {
+    const minWidth = shape.props.mode === 'chat' ? 280 : 240
+    const minHeight = shape.props.mode === 'chat' ? 220 : 40
+
+    return resizeBox(shape, info, { minWidth, minHeight })
+  }
 
   component(shape: AITextShape) {
     const messages = getMessages(shape)
-    // Show chat mode if: 2+ messages OR shape was explicitly resized for chat (reply clicked)
-    const isChat = messages.length > 1 || (messages.length === 1 && shape.props.h >= 200)
-    const isStreaming = messages.length > 0 &&
-      messages[messages.length - 1].role === 'assistant' &&
-      messages[messages.length - 1].text === ''
+    const isChat = shape.props.mode === 'chat'
+    const isStreaming = shape.props.status !== 'idle'
 
     if (!isChat) {
       return (
         <HTMLContainer>
-          <SimpleMode shape={shape} messages={messages} isStreaming={isStreaming} />
+          <SimpleMode shape={shape} messages={messages} />
         </HTMLContainer>
       )
     }
@@ -500,5 +667,20 @@ export class AITextShapeUtil extends ShapeUtil<AITextShape> {
         ry={8}
       />
     )
+  }
+
+  override onDoubleClick(shape: AITextShape) {
+    if (shape.props.mode === 'simple') {
+      return {
+        ...shape,
+        props: {
+          ...shape.props,
+          mode: 'chat' as const,
+          h: Math.max(280, shape.props.h),
+        },
+      }
+    }
+
+    return
   }
 }

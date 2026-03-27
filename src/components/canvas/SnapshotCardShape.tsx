@@ -12,6 +12,7 @@ import {
   T,
   RecordProps,
 } from 'tldraw'
+import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from '@tldraw/tlschema'
 
 // Module augmentation to register custom shape type with tldraw
 declare module '@tldraw/tlschema' {
@@ -24,6 +25,7 @@ declare module '@tldraw/tlschema' {
 interface SnapshotCardProps {
   w: number
   h: number
+  boardId: string
   boardName: string
   medium: string // 'web' | 'image'
   directionSummary: string
@@ -38,6 +40,7 @@ export type SnapshotCardShape = TLBaseShape<'snapshot-card', SnapshotCardProps>
 export const snapshotCardProps: RecordProps<SnapshotCardShape> = {
   w: T.number,
   h: T.number,
+  boardId: T.string,
   boardName: T.string,
   medium: T.string,
   directionSummary: T.string,
@@ -47,9 +50,28 @@ export const snapshotCardProps: RecordProps<SnapshotCardShape> = {
   fontInfo: T.string,
 }
 
+const versions = createShapePropsMigrationIds('snapshot-card', {
+  AddBoardRelationship: 1,
+})
+
+const snapshotCardMigrations = createShapePropsMigrationSequence({
+  sequence: [
+    {
+      id: versions.AddBoardRelationship,
+      up: (props: Record<string, unknown>) => {
+        if (props.boardId === undefined) props.boardId = ''
+      },
+      down: (props: Record<string, unknown>) => {
+        delete props.boardId
+      },
+    },
+  ],
+})
+
 export class SnapshotCardShapeUtil extends ShapeUtil<SnapshotCardShape> {
   static override type = 'snapshot-card' as const
   static override props = snapshotCardProps
+  static override migrations = snapshotCardMigrations
 
   getGeometry(shape: SnapshotCardShape) {
     return new Rectangle2d({
@@ -63,6 +85,7 @@ export class SnapshotCardShapeUtil extends ShapeUtil<SnapshotCardShape> {
     return {
       w: 240,
       h: 320,
+      boardId: '',
       boardName: 'Untitled',
       medium: 'web',
       directionSummary: '',
