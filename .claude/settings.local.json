@@ -11,7 +11,8 @@
       "Bash(git commit:*)",
       "Bash(npx tsc:*)",
       "Bash(grep -r \"getSvg\\\\|exportSvg\\\\|export.*svg\" node_modules/tldraw/dist/ --include=*.d.ts -l)",
-      "Bash(grep -r getSvg /c/Users/tlton/OneDrive/Desktop/grain/node_modules/tldraw/dist/ --include=*.d.ts)"
+      "Bash(grep -r getSvg /c/Users/tlton/OneDrive/Desktop/grain/node_modules/tldraw/dist/ --include=*.d.ts)",
+      "Bash(npx next:*)"
     ]
   }
 }

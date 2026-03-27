@@ -8,8 +8,8 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useEditor, useValue, TLShapeId, createShapeId } from 'tldraw'
 import { Send } from 'lucide-react'
 import { buildSelectionContext } from '@/lib/selection-context'
-import { executeToolCalls } from '@/lib/canvas-ai-executor'
-import type { CanvasAIResponse, AISuggestion } from '@/types/canvas-ai'
+import { executeToolCalls, createAIShape, streamToShape } from '@/lib/canvas-ai-executor'
+import type { CanvasAIResponse, CanvasAIChatRequest, AISuggestion, ChatMessage } from '@/types/canvas-ai'
 import { AIThinkingIndicator } from './AIThinkingIndicator'
 import { AISparkleIcon } from './AISparkleIcon'
 
@@ -187,34 +187,92 @@ export function AIActionBar({
 
     try {
       const context = buildSelectionContext(editor)
+      const selectionCtxJson = JSON.stringify(context)
 
-      const res = await fetch('/api/canvas-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, context, canvasId }),
-      })
+      // Check if message is likely a tool-use action (group, rename, delete, extract)
+      const toolPatterns = /\b(group|rename|delete|extract\s*dna)\b/i
+      const isToolAction = toolPatterns.test(message)
 
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Request failed')
-      }
+      if (isToolAction) {
+        // Use single-shot endpoint for tool-use actions
+        const res = await fetch('/api/canvas-ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, context, canvasId }),
+        })
 
-      const data: CanvasAIResponse = await res.json()
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || 'Request failed')
+        }
 
-      if (data.error) throw new Error(data.error)
+        const data: CanvasAIResponse = await res.json()
+        if (data.error) throw new Error(data.error)
 
-      // Execute tool calls
-      if (data.toolCalls.length > 0) {
-        setThinkingStatus('Executing...')
-        const results = await executeToolCalls(editor, data.toolCalls, canvasId)
+        const placeTextCall = data.toolCalls.find((tc) => tc.name === 'place_text')
+        const otherToolCalls = data.toolCalls.filter((tc) => tc.name !== 'place_text')
 
-        // Handle special results
-        for (const result of results) {
-          if (result.triggerExtractDna && onExtractDna) {
-            onExtractDna()
+        if (otherToolCalls.length > 0) {
+          setThinkingStatus('Executing...')
+          const results = await executeToolCalls(editor, otherToolCalls, canvasId)
+          for (const result of results) {
+            if (result.triggerExtractDna && onExtractDna) onExtractDna()
+            if (result.needsDeleteConfirmation) setShowDeleteConfirm(true)
           }
-          if (result.needsDeleteConfirmation) {
-            setShowDeleteConfirm(true)
+        }
+
+        if (placeTextCall) {
+          const textInput = placeTextCall.input as { text: string }
+          const shapeId = createAIShape(editor, 'near_selection', selectionCtxJson)
+          const msgs: ChatMessage[] = [{ role: 'assistant', text: textInput.text, timestamp: Date.now() }]
+          editor.updateShape({
+            id: shapeId,
+            type: 'ai-text',
+            props: { messages: JSON.stringify(msgs) },
+          })
+        }
+      } else {
+        // Use streaming endpoint — create shape immediately (shimmer shows while empty)
+        const shapeId = createAIShape(editor, 'near_selection', selectionCtxJson)
+
+        // Build chat messages for the streaming endpoint
+        const chatMessages: ChatMessage[] = [
+          { role: 'user', text: message, timestamp: Date.now() },
+          { role: 'assistant', text: '', timestamp: Date.now() },
+        ]
+
+        // Update shape with user message + empty assistant placeholder
+        editor.updateShape({
+          id: shapeId,
+          type: 'ai-text',
+          props: { messages: JSON.stringify(chatMessages) },
+        })
+
+        const res = await fetch('/api/canvas-ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: chatMessages,
+            originalContext: selectionCtxJson,
+            currentContext: context,
+            canvasId,
+          } satisfies CanvasAIChatRequest),
+        })
+
+        if (!res.ok || !res.body) {
+          chatMessages[chatMessages.length - 1].text = 'Error: request failed'
+          editor.updateShape({
+            id: shapeId,
+            type: 'ai-text',
+            props: { messages: JSON.stringify(chatMessages) },
+          })
+        } else {
+          const { toolCalls } = await streamToShape(editor, shapeId, res.body)
+          if (toolCalls.length > 0) {
+            const results = await executeToolCalls(editor, toolCalls, canvasId)
+            for (const result of results) {
+              if (result.triggerExtractDna && onExtractDna) onExtractDna()
+            }
           }
         }
       }
@@ -231,6 +289,9 @@ export function AIActionBar({
             w: 280,
             h: 40,
             text: `Error: ${error instanceof Error ? error.message : 'Something went wrong'}`,
+            messages: '[]',
+            selectionContext: '{}',
+            title: '',
           },
         })
       }

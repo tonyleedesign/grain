@@ -71,3 +71,28 @@ export interface AISuggestion {
   label: string
   message: string
 }
+
+// --- Chat card message ---
+
+export interface ChatMessage {
+  role: 'assistant' | 'user'
+  text: string
+  timestamp: number
+}
+
+// --- SSE streaming types ---
+
+export type SSEEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_call'; name: string; input: Record<string, unknown> }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+
+// --- Multi-turn request ---
+
+export interface CanvasAIChatRequest {
+  messages: ChatMessage[]
+  originalContext: string       // JSON stringified original selection context
+  currentContext: CanvasAISelectionContext
+  canvasId: string
+}
