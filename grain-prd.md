@@ -144,6 +144,13 @@ If Claude API is unavailable or times out during Organize:
 - Toast appears: *"Grain couldn't connect to AI right now. [Retry]"* — manual retry button, no auto-retry
 - Canvas remains fully usable
 
+**Future upgrade — guided Organize flow (backlog):**
+- Before Organize runs, show a warning modal explaining that AI will group inspo/assets into boards and may move or reposition items
+- While AI is working, show a clear organizing state so users always know the action is in progress
+- After AI returns a proposal, show a preview of the proposed boards and grouped inspo/images before committing changes
+- User confirms or cancels — the live canvas should remain unchanged until confirmation
+- Future TBD: allow users to manually move inspo/images between boards after organize, with optional DNA regeneration prompts
+
 Boards are displayed as grouped clusters on the canvas. Each board's chrome is subtly tinted with its dominant DNA color (see Section 11.6). Users can expand a board to see full Design DNA in the side panel.
 
 ### 5.4 Cursor AI Chatbox

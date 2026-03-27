@@ -17,32 +17,76 @@
   --tl-color-selected: color-mix(in srgb, var(--color-text) 10%, transparent);
   --tl-color-selected-contrast: var(--color-text);
 
+  /* Map tldraw's internal colors to Grain tokens */
+  --tl-color-low: var(--color-surface);
+  --tl-color-panel: var(--color-surface);
+
   /* Map tldraw fonts to Grain's font family */
   --tl-font-sans: var(--font-family);
 }
 
 /* Style tldraw's default UI chrome to match Grain */
 .grain-canvas-wrapper .tlui-layout {
+  --grain-ui-inset: var(--tl-space-4);
   font-family: var(--font-family);
   color: var(--color-text);
+  padding: var(--grain-ui-inset) var(--grain-ui-inset) 0;
 }
 
-.grain-canvas-wrapper .grain-menu-panel {
-  position: relative;
-  z-index: var(--tl-layer-panels);
-  width: fit-content;
-  padding: 8px;
+/* Neutralize tldraw's built-in spacing that compounds with our inset */
+.grain-canvas-wrapper .tlui-style-panel__wrapper {
+  margin: 0;
 }
 
-.grain-canvas-wrapper .grain-menu-panel__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.grain-canvas-wrapper .tlui-main-toolbar--horizontal {
+  padding-bottom: var(--grain-ui-inset);
 }
 
-/* Toolbar and panel styling */
-.grain-canvas-wrapper .tlui-toolbar,
-.grain-canvas-wrapper .tlui-style-panel,
+
+/* ── Menu zone (top-left: hamburger, page menu, quick actions) ── */
+.grain-canvas-wrapper .tlui-menu-zone {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-toolbar);
+}
+
+/* Hover: transparent bg, subtle ::after highlight (consistent everywhere) */
+.grain-canvas-wrapper .tlui-menu-zone .tlui-button:hover {
+  background: transparent;
+  z-index: 1;
+}
+
+.grain-canvas-wrapper .tlui-menu-zone .tlui-button::after {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.grain-canvas-wrapper .tlui-menu-zone .tlui-button:hover::after {
+  opacity: 1;
+}
+
+/* ── Style panel (top-right) ── */
+.grain-canvas-wrapper .tlui-style-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-toolbar);
+}
+
+.grain-canvas-wrapper .tlui-style-panel .tlui-button:hover {
+  background: transparent;
+  z-index: 1;
+}
+
+.grain-canvas-wrapper .tlui-style-panel .tlui-button::after {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.grain-canvas-wrapper .tlui-style-panel .tlui-button:hover::after {
+  opacity: 1;
+}
+
+/* ── Menus (dropdowns, context menus, popovers) ── */
 .grain-canvas-wrapper .tlui-menu {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -50,110 +94,55 @@
   box-shadow: var(--shadow-toolbar);
 }
 
-.grain-canvas-wrapper .grain-menu-panel [data-testid='main-menu.button'],
-.grain-canvas-wrapper .grain-menu-panel [data-testid='page-menu.button'] {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-toolbar);
-}
-
-.grain-canvas-wrapper .grain-menu-panel__single-action,
-.grain-canvas-wrapper .grain-menu-panel__quick-actions {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-toolbar);
-}
-
-.grain-canvas-wrapper .grain-menu-panel__single-action {
-  padding: 0;
-}
-
-.grain-canvas-wrapper .grain-menu-panel__quick-actions {
-  gap: 0;
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button {
-  width: 48px;
-  height: 48px;
-  margin-inline: 6px;
-  border-radius: 8px;
-  position: relative;
-  background: transparent !important;
-  color: color-mix(in srgb, var(--color-surface) 96%, transparent);
-  padding: 0;
-  min-width: 48px;
-  min-height: 48px;
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button:hover,
-.grain-canvas-wrapper .grain-organize-toolbar-button:focus-visible,
-.grain-canvas-wrapper .grain-organize-toolbar-button:active,
-.grain-canvas-wrapper .grain-organize-toolbar-button[aria-pressed='true'] {
-  background: transparent !important;
-  color: color-mix(in srgb, var(--color-surface) 96%, transparent) !important;
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 40px;
-  height: 40px;
-  transform: translate(-50%, -50%);
-  border-radius: 999px;
-  background: var(--color-accent);
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button::after {
-  inset: 4px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-text) 12%, transparent) !important;
-  opacity: 0 !important;
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button:hover::after,
-.grain-canvas-wrapper .grain-organize-toolbar-button:focus-visible::after {
-  opacity: 1 !important;
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button:focus-visible,
-.grain-canvas-wrapper .tl-container__focused:not(.tl-container__no-focus-ring) .grain-organize-toolbar-button:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button .tlui-button__icon {
-  color: color-mix(in srgb, var(--color-surface) 96%, transparent);
-  width: 16px;
-  height: 16px;
-  position: relative;
-  z-index: 1;
-}
-
-.grain-canvas-wrapper .grain-organize-toolbar-button .tlui-icon {
-  width: 16px;
-  height: 16px;
-  position: relative;
-  z-index: 1;
-}
-
-/* Softer menu/panel hover states */
-.grain-canvas-wrapper .tlui-menu .tlui-button:hover,
-.grain-canvas-wrapper .tlui-style-panel .tlui-button:hover,
-.grain-canvas-wrapper .grain-menu-panel .tlui-button:hover {
+.grain-canvas-wrapper .tlui-menu .tlui-button:hover {
   background: transparent;
+  z-index: 1;
 }
 
-.grain-canvas-wrapper .tlui-menu .tlui-button::after,
-.grain-canvas-wrapper .tlui-style-panel .tlui-button::after,
-.grain-canvas-wrapper .grain-menu-panel .tlui-button::after {
-  background: var(--color-bg);
+.grain-canvas-wrapper .tlui-menu .tlui-button::after {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
 }
 
-/* Keep the main toolbar neutral and stable on hover */
+.grain-canvas-wrapper .tlui-menu .tlui-button:hover::after {
+  opacity: 1;
+}
+
+/* Page menu list — allow full height */
+.grain-canvas-wrapper .tlui-page-menu__list {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* Page menu: canvas switcher footer */
+.grain-canvas-wrapper .grain-page-menu__footer {
+  display: flex;
+  flex-direction: column;
+  padding: var(--tl-space-2);
+}
+
+.grain-canvas-wrapper .grain-page-menu__separator {
+  display: none;
+}
+
+.grain-canvas-wrapper .grain-page-menu__switch {
+  position: relative;
+  width: 100%;
+  text-align: left;
+  padding: var(--tl-space-3) var(--tl-space-4);
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.grain-canvas-wrapper .grain-page-menu__switch:hover {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+/* ── Main toolbar (bottom center) ── */
 .grain-canvas-wrapper .tlui-main-toolbar__tools,
 .grain-canvas-wrapper .tlui-main-toolbar__extras__controls,
 .grain-canvas-wrapper .tlui-main-toolbar__overflow-content {
@@ -173,7 +162,60 @@
   background: color-mix(in srgb, var(--color-text) 6%, transparent);
 }
 
-/* DNA panel — override tldraw's global user-select: none on .tl-container * */
+/* ── Organize toolbar button — accent circle with icon ── */
+.grain-canvas-wrapper .grain-organize-toolbar-button {
+  width: 48px;
+  height: 48px;
+  margin-inline: 6px;
+  border-radius: 8px;
+  position: relative;
+  background: transparent;
+  color: var(--color-surface);
+  padding: 0;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button:hover,
+.grain-canvas-wrapper .grain-organize-toolbar-button:focus-visible,
+.grain-canvas-wrapper .grain-organize-toolbar-button:active,
+.grain-canvas-wrapper .grain-organize-toolbar-button[aria-pressed='true'] {
+  background: transparent;
+  color: var(--color-surface);
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+
+/* Suppress tldraw's default ::after hover on the organize button */
+.grain-canvas-wrapper .grain-organize-toolbar-button::after {
+  display: none;
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button .tlui-button__icon,
+.grain-canvas-wrapper .grain-organize-toolbar-button .tlui-icon {
+  color: var(--color-surface);
+  width: 16px;
+  height: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── DNA panel — override tldraw's global user-select: none ── */
 .grain-dna-panel,
 .grain-dna-panel * {
   -webkit-user-select: text !important;

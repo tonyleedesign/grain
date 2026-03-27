@@ -91,6 +91,34 @@ function getCanvasId(): string {
   return match?.[1] || ''
 }
 
+async function generateTitle(
+  editor: ReturnType<typeof useEditor>,
+  shapeId: TLShapeId,
+  messages: ChatMessage[]
+) {
+  const summary = messages
+    .slice(0, 4)
+    .map((m) => `${m.role}: ${m.text.slice(0, 120)}`)
+    .join('\n')
+
+  try {
+    const res = await fetch('/api/canvas-ai/title', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary }),
+    })
+    if (!res.ok) return
+    const { title } = await res.json()
+    if (title) {
+      editor.updateShape({
+        id: shapeId,
+        type: 'ai-text',
+        props: { title },
+      })
+    }
+  } catch {}
+}
+
 async function sendChatMessage(
   editor: ReturnType<typeof useEditor>,
   shapeId: TLShapeId,
@@ -150,6 +178,15 @@ async function sendChatMessage(
   if (toolCalls.length > 0) {
     await executeToolCalls(editor, toolCalls, canvasId)
   }
+
+  // Generate title after first follow-up (3 messages = original + user + reply)
+  const updatedShape = editor.getShape(shapeId) as AITextShape | undefined
+  if (updatedShape) {
+    const updatedMessages: ChatMessage[] = JSON.parse(updatedShape.props.messages)
+    if (updatedMessages.length >= 3 && !updatedShape.props.title) {
+      generateTitle(editor, shapeId, updatedMessages)
+    }
+  }
 }
 
 function SimpleMode({
@@ -162,8 +199,23 @@ function SimpleMode({
   isStreaming: boolean
 }) {
   const editor = useEditor()
+  const contentRef = useRef<HTMLDivElement>(null)
   const text = messages[0]?.text || ''
   const hasContent = text.length > 0
+
+  // Auto-size height to fit content
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || !hasContent) return
+    const measured = el.scrollHeight
+    if (measured > 0 && Math.abs(measured - shape.props.h) > 2) {
+      editor.updateShape({
+        id: shape.id,
+        type: 'ai-text',
+        props: { h: measured },
+      })
+    }
+  }, [editor, shape.id, shape.props.h, text, hasContent])
 
   let className = 'ai-card ai-card-simple'
   if (!hasContent) {
@@ -182,6 +234,7 @@ function SimpleMode({
 
   return (
     <div
+      ref={contentRef}
       className={className}
       style={{
         width: shape.props.w,
@@ -211,6 +264,8 @@ function ChatMode({
   const editor = useEditor()
   const [inputValue, setInputValue] = useState('')
   const [isMinimized, setIsMinimized] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleValue, setTitleValue] = useState(shape.props.title || 'Chat')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const userScrolledRef = useRef(false)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -234,6 +289,18 @@ function ChatMode({
     const { scrollTop, scrollHeight, clientHeight } = container
     userScrolledRef.current = scrollHeight - scrollTop - clientHeight > 40
   }, [])
+
+  const handleTitleBlur = useCallback(() => {
+    setEditingTitle(false)
+    const trimmed = titleValue.trim() || 'Chat'
+    if (trimmed !== shape.props.title) {
+      editor.updateShape({
+        id: shape.id,
+        type: 'ai-text',
+        props: { title: trimmed },
+      })
+    }
+  }, [editor, shape.id, shape.props.title, titleValue])
 
   const handleSend = useCallback(() => {
     if (!inputValue.trim() || isStreaming) return
@@ -285,8 +352,15 @@ function ChatMode({
         <AISparkleIcon size={12} />
         <input
           className="ai-card-title"
-          value={shape.props.title || 'Chat'}
-          readOnly
+          value={editingTitle ? titleValue : (shape.props.title || 'Chat')}
+          onChange={(e) => { setEditingTitle(true); setTitleValue(e.target.value) }}
+          onFocus={() => { setEditingTitle(true); setTitleValue(shape.props.title || 'Chat') }}
+          onBlur={handleTitleBlur}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') e.currentTarget.blur()
+            if (e.key === 'Escape') { setEditingTitle(false); setTitleValue(shape.props.title || 'Chat') }
+          }}
           title={shape.props.title || 'Chat'}
         />
         <span className="ai-card-badge">{messages.length}</span>

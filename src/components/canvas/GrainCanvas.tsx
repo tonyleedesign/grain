@@ -15,6 +15,8 @@ import { AITextShapeUtil } from './AITextShape'
 import { createGrainImageToolbar } from './GrainImageToolbar'
 import { createGrainContextMenu } from './GrainContextMenu'
 import { GrainMenuPanel } from './GrainMenuPanel'
+import { GrainMainMenu } from './GrainMainMenu'
+import { GrainPageMenu } from './GrainPageMenu'
 import { createGrainToolbar } from './GrainToolbar'
 
 interface GrainCanvasProps {
@@ -34,6 +36,8 @@ export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasPro
       ImageToolbar: createGrainImageToolbar(() => askAIRef.current()),
       ContextMenu: createGrainContextMenu(() => askAIRef.current()),
       MenuPanel: GrainMenuPanel,
+      MainMenu: GrainMainMenu,
+      PageMenu: GrainPageMenu,
       Toolbar: createGrainToolbar(canvasId),
     }),
     [canvasId]
