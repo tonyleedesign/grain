@@ -27,9 +27,10 @@ function buildUserMessage(req: CanvasAIRequest): string {
 
   if (context.selectedBoards) {
     parts.push(`Selected boards: ${context.selectedBoards.names.join(', ')}`)
-    if (context.selectedBoards.dnaSummaries?.length) {
-      context.selectedBoards.dnaSummaries.forEach((summary, i) => {
-        parts.push(`  ${context.selectedBoards!.names[i]}: ${summary}`)
+    if (context.selectedBoards.boards.length > 0) {
+      parts.push('Board details:')
+      context.selectedBoards.boards.forEach((board) => {
+        parts.push(`  - ${board.name}: ${board.imageCount} image(s)`)
       })
     }
   }
@@ -102,16 +103,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // analyze_selection is a reasoning aid, not a visible canvas action
+    const executableToolCalls = toolCalls.filter((tc) => tc.name !== 'analyze_selection')
+
     // If Claude responded with text but no place_text tool call, wrap it as one
-    if (textResponse && !toolCalls.some((tc) => tc.name === 'place_text')) {
-      toolCalls.push({
+    if (textResponse && !executableToolCalls.some((tc) => tc.name === 'place_text')) {
+      executableToolCalls.push({
         name: 'place_text',
         input: { text: textResponse, position: 'near_selection' },
       })
       textResponse = undefined
     }
 
-    const result: CanvasAIResponse = { toolCalls, textResponse }
+    // Guarantee analysis requests produce a visible canvas artifact
+    if (
+      toolCalls.some((tc) => tc.name === 'analyze_selection') &&
+      !textResponse &&
+      !executableToolCalls.some((tc) => tc.name === 'place_text')
+    ) {
+      executableToolCalls.push({
+        name: 'place_text',
+        input: {
+          text: "I couldn't generate a clear analysis for this selection. Try asking more specifically.",
+          position: 'near_selection',
+        },
+      })
+    }
+
+    const result: CanvasAIResponse = { toolCalls: executableToolCalls, textResponse }
     return NextResponse.json(result)
   } catch (error) {
     console.error('Canvas AI error:', error)

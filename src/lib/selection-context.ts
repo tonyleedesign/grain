@@ -80,29 +80,37 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
 
   // Add board details if boards are selected
   if (boards.length > 0) {
-    // Collect image URLs from inside the selected boards
-    const boardImageUrls: string[] = []
-    for (const board of boards) {
+    const boardDetails = boards.map((board) => {
+      const imageUrls: string[] = []
       const children = editor.getSortedChildIdsForParent(board.id)
+
       for (const childId of children) {
         const child = editor.getShape(childId)
         if (child?.type === 'image') {
           const img = child as TLImageShape
           const asset = img.props.assetId ? editor.getAsset(img.props.assetId) : null
           const src = (asset?.props as { src?: string })?.src
-          if (src) boardImageUrls.push(src)
+          if (src) imageUrls.push(src)
         }
       }
-    }
+
+      return {
+        name: (board.props as { name?: string }).name || 'Untitled',
+        imageCount: imageUrls.length,
+        imageUrls,
+      }
+    })
 
     context.selectedBoards = {
-      names: boards.map((b) => (b.props as { name?: string }).name || 'Untitled'),
+      names: boardDetails.map((board) => board.name),
+      boards: boardDetails,
     }
 
     // If no direct images selected but boards have images, include them for vision
-    if (!context.selectedImages && boardImageUrls.length > 0) {
+    const combinedBoardImageUrls = boardDetails.flatMap((board) => board.imageUrls)
+    if (!context.selectedImages && combinedBoardImageUrls.length > 0) {
       context.selectedImages = {
-        urls: boardImageUrls,
+        urls: combinedBoardImageUrls,
         ungrouped: false,
         boardName: boards.length === 1
           ? (boards[0].props as { name?: string }).name

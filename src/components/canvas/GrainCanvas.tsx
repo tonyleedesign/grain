@@ -14,6 +14,8 @@ import { SnapshotCardShapeUtil } from './SnapshotCardShape'
 import { AITextShapeUtil } from './AITextShape'
 import { createGrainImageToolbar } from './GrainImageToolbar'
 import { createGrainContextMenu } from './GrainContextMenu'
+import { GrainMenuPanel } from './GrainMenuPanel'
+import { createGrainToolbar } from './GrainToolbar'
 
 interface GrainCanvasProps {
   canvasType: 'community' | 'private'
@@ -31,8 +33,10 @@ export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasPro
     () => ({
       ImageToolbar: createGrainImageToolbar(() => askAIRef.current()),
       ContextMenu: createGrainContextMenu(() => askAIRef.current()),
+      MenuPanel: GrainMenuPanel,
+      Toolbar: createGrainToolbar(canvasId),
     }),
-    []
+    [canvasId]
   )
 
   // Custom asset store — routes image uploads through Grain's pipeline
@@ -58,6 +62,7 @@ export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasPro
         assets={assets}
         maxAssetSize={50 * 1024 * 1024}
         inferDarkMode={false}
+        options={{ actionShortcutsLocation: 'menu' }}
         persistenceKey={`grain-${canvasType}-${canvasId}`}
       >
         <CanvasUI canvasId={canvasId} askAIRef={askAIRef} />

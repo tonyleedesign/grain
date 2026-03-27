@@ -197,10 +197,50 @@ export async function POST(request: NextRequest) {
       fontShortlist
     )
 
-    // Upsert DNA + observations to Supabase
-    const { data: updated, error: updateError } = await supabaseServer
+    // Resolve or create the board identity row first.
+    let boardId: string | null = null
+
+    const { data: existingBoard, error: boardLookupError } = await supabaseServer
       .from('boards')
-      .update({
+      .select('id')
+      .eq('canvas_id', canvasId)
+      .eq('name', boardName)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (boardLookupError) {
+      console.error('Board lookup error:', boardLookupError)
+    }
+
+    if (existingBoard?.id) {
+      boardId = existingBoard.id
+    } else {
+      const { data: insertedBoard, error: insertBoardError } = await supabaseServer
+        .from('boards')
+        .insert({
+          canvas_id: canvasId,
+          name: boardName,
+        })
+        .select('id')
+        .single()
+
+      if (insertBoardError || !insertedBoard) {
+        console.error('Board insert error:', insertBoardError)
+      } else {
+        boardId = insertedBoard.id
+      }
+    }
+
+    if (!boardId) {
+      throw new Error('Failed to resolve board before saving extraction')
+    }
+
+    // Persist extraction history separately from the stable board record.
+    const { data: extractionRow, error: extractionError } = await supabaseServer
+      .from('board_extractions')
+      .insert({
+        board_id: boardId,
         medium,
         use_case: useCase || null,
         source_context: sourceContext || null,
@@ -208,31 +248,19 @@ export async function POST(request: NextRequest) {
         dna_data: dna,
         observations,
       })
-      .eq('canvas_id', canvasId)
-      .eq('name', boardName)
       .select('id')
+      .single()
 
-    if (updateError) {
-      console.error('DNA update error:', updateError)
-    }
-
-    // If no row was updated, insert
-    if (!updated || updated.length === 0) {
-      const { error: insertError } = await supabaseServer
+    if (extractionError || !extractionRow) {
+      console.error('Board extraction insert error:', extractionError)
+    } else {
+      const { error: latestExtractionError } = await supabaseServer
         .from('boards')
-        .insert({
-          canvas_id: canvasId,
-          name: boardName,
-          medium,
-          use_case: useCase || null,
-          source_context: sourceContext || null,
-          appeal_context: appealContext || null,
-          dna_data: dna,
-          observations,
-        })
+        .update({ latest_extraction_id: extractionRow.id })
+        .eq('id', boardId)
 
-      if (insertError) {
-        console.error('DNA insert error:', insertError)
+      if (latestExtractionError) {
+        console.error('Board latest extraction update error:', latestExtractionError)
       }
     }
 

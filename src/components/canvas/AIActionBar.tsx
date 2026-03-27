@@ -18,6 +18,7 @@ interface AIActionBarProps {
   onExtractDna?: () => void
   forceExpanded?: boolean
   onForceExpandedConsumed?: () => void
+  onVisibilityChange?: (visible: boolean) => void
 }
 
 // Contextual suggestions based on selection type
@@ -59,7 +60,13 @@ function getSuggestions(
   return []
 }
 
-export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpandedConsumed }: AIActionBarProps) {
+export function AIActionBar({
+  canvasId,
+  onExtractDna,
+  forceExpanded,
+  onForceExpandedConsumed,
+  onVisibilityChange,
+}: AIActionBarProps) {
   const editor = useEditor()
   const [expanded, setExpanded] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -101,6 +108,12 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
         boardCount: boards.length,
       }
     },
+    [editor]
+  )
+
+  const selectionKey = useValue(
+    'selectionKey',
+    () => editor.getSelectedShapeIds().slice().sort().join('|'),
     [editor]
   )
 
@@ -158,7 +171,11 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
     setExpanded(false)
     setInputValue('')
     setShowDeleteConfirm(false)
-  }, [selectionInfo.type, selectionInfo.imageCount, selectionInfo.boardCount])
+  }, [selectionKey])
+
+  useEffect(() => {
+    onVisibilityChange?.(expanded || isProcessing || showDeleteConfirm)
+  }, [expanded, isProcessing, showDeleteConfirm, onVisibilityChange])
 
   const sendMessage = useCallback(async (message: string) => {
     if (!message.trim() || isProcessing) return
@@ -253,8 +270,9 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
           padding: '8px 14px',
           borderRadius: 'var(--radius-lg)',
           backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-toolbar)',
-          fontFamily: 'var(--font-family)',
+          fontFamily: 'var(--font-display, var(--font-family))',
           fontSize: 12,
           color: 'var(--color-muted)',
           pointerEvents: 'none',
@@ -282,8 +300,9 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
           padding: '8px 12px',
           borderRadius: 'var(--radius-lg)',
           backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-toolbar)',
-          fontFamily: 'var(--font-family)',
+          fontFamily: 'var(--font-display, var(--font-family))',
           fontSize: 12,
           pointerEvents: 'auto',
         }}
@@ -294,11 +313,11 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
           style={{
             padding: '3px 10px',
             borderRadius: 'var(--radius-md)',
-            backgroundColor: '#b44040',
-            color: '#fff',
+            backgroundColor: 'var(--destructive)',
+            color: 'var(--color-surface)',
             border: 'none',
             fontSize: 11,
-            fontFamily: 'var(--font-family)',
+            fontFamily: 'var(--font-display, var(--font-family))',
             cursor: 'pointer',
           }}
         >
@@ -313,7 +332,7 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
             color: 'var(--color-muted)',
             border: '1px solid var(--color-border)',
             fontSize: 11,
-            fontFamily: 'var(--font-family)',
+            fontFamily: 'var(--font-display, var(--font-family))',
             cursor: 'pointer',
           }}
         >
@@ -356,8 +375,9 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
           padding: '8px',
           borderRadius: 'var(--radius-lg)',
           backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-toolbar)',
-          fontFamily: 'var(--font-family)',
+          fontFamily: 'var(--font-display, var(--font-family))',
           minWidth: 240,
         }}
       >
@@ -378,7 +398,7 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
                   color: 'var(--color-text)',
                   border: '1px solid var(--color-border)',
                   fontSize: 11,
-                  fontFamily: 'var(--font-family)',
+                  fontFamily: 'var(--font-display, var(--font-family))',
                   cursor: 'pointer',
                   transition: 'border-color 0.15s ease',
                 }}
@@ -439,7 +459,7 @@ export function AIActionBar({ canvasId, onExtractDna, forceExpanded, onForceExpa
               height: 28,
               borderRadius: 'var(--radius-md)',
               backgroundColor: inputValue.trim() ? 'var(--color-accent)' : 'var(--color-bg)',
-              color: inputValue.trim() ? '#fff' : 'var(--color-muted)',
+              color: inputValue.trim() ? 'var(--color-surface)' : 'var(--color-muted)',
               border: 'none',
               cursor: inputValue.trim() ? 'pointer' : 'default',
             }}

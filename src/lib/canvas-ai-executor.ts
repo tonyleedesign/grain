@@ -47,7 +47,7 @@ async function executeOne(
       return executeGroupImages(editor, call.input as { name: string }, canvasId)
 
     case 'rename_board':
-      return executeRenameBoard(editor, call.input as { newName: string })
+      return executeRenameBoard(editor, call.input as { newName: string }, canvasId)
 
     case 'delete_selection':
       return { success: true, message: 'Confirm deletion?', needsDeleteConfirmation: true }
@@ -203,15 +203,35 @@ function executeGroupImages(
   return { success: true, message: `Grouped ${images.length} images into "${params.name}"` }
 }
 
-function executeRenameBoard(
+async function executeRenameBoard(
   editor: Editor,
-  params: { newName: string }
-): ExecutionResult {
+  params: { newName: string },
+  canvasId: string
+): Promise<ExecutionResult> {
   const selected = editor.getSelectedShapes()
   const frame = selected.find((s) => s.type === 'frame')
 
   if (!frame) {
     return { success: false, message: 'No board selected' }
+  }
+
+  const oldName = (frame.props as { name?: string }).name
+  if (!oldName) {
+    return { success: false, message: 'Selected board has no name' }
+  }
+
+  const response = await fetch('/api/boards', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      canvasId,
+      oldName,
+      newName: params.newName,
+    }),
+  })
+
+  if (!response.ok) {
+    return { success: false, message: `Failed to rename "${oldName}"` }
   }
 
   editor.updateShape({

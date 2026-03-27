@@ -29,13 +29,13 @@ export function AntiPatternsField({ antiPatterns }: AntiPatternsFieldProps) {
             style={{ backgroundColor: 'var(--color-bg)' }}
           >
             <div className="flex items-start gap-1.5 mb-1">
-              <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#4a7c4f' }} />
+              <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--color-accent)' }} />
               <span className="text-[12px] leading-snug" style={{ color: 'var(--color-text)' }}>
                 {ap.this_is}
               </span>
             </div>
             <div className="flex items-start gap-1.5">
-              <X className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#b44040' }} />
+              <X className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--destructive)' }} />
               <span className="text-[12px] leading-snug" style={{ color: 'var(--color-muted)' }}>
                 {ap.not_that}
               </span>

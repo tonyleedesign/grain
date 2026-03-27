@@ -11,7 +11,11 @@ export interface CanvasAISelectionContext {
   }
   selectedBoards?: {
     names: string[]
-    dnaSummaries?: string[]
+    boards: Array<{
+      name: string
+      imageCount: number
+      imageUrls: string[]
+    }>
   }
   canvasOverview: {
     totalBoards: number
