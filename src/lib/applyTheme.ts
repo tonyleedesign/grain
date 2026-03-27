@@ -16,6 +16,7 @@ export function applyTheme(theme: GrainTheme) {
 
   // Typography
   root.style.setProperty('--font-family', theme.typography.fontFamily)
+  root.style.setProperty('--font-display', theme.typography.displayFontFamily)
   loadFont(theme.typography.fontUrl)
 
   // Radius
