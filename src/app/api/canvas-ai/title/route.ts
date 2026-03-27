@@ -19,7 +19,15 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: `Generate a 2-4 word title for this conversation. Return ONLY the title, nothing else.\n\n${summary}`,
+          content: `Generate a concise 2-4 word title for this conversation.
+
+Rules:
+- Return ONLY the title, nothing else
+- Do not use quotes
+- Do not start with "Canvas", "AI", "Chat", or "Conversation"
+- Prefer concrete subject words over generic labels
+
+${summary}`,
         },
       ],
     })

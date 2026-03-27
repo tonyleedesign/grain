@@ -170,9 +170,9 @@ async function handleChatStream(body: CanvasAIChatRequest) {
     }
   }
 
-  // Include images from current context if available
-  const lastUserIdx = claudeMessages.length - 1
-  if (body.currentContext?.selectedImages?.urls.length && claudeMessages[lastUserIdx]?.role === 'user') {
+  // Include images from the most recent user turn if available
+  const lastUserIdx = [...claudeMessages].map((msg) => msg.role).lastIndexOf('user')
+  if (body.currentContext?.selectedImages?.urls.length && lastUserIdx >= 0 && claudeMessages[lastUserIdx]?.role === 'user') {
     const content: Anthropic.Messages.ContentBlockParam[] = [
       { type: 'text', text: claudeMessages[lastUserIdx].content as string },
     ]

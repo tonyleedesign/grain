@@ -10,6 +10,61 @@ const IMAGE_GAP = 12
 const ROW_HEIGHT = 250
 const MAX_ROW_WIDTH = 900
 const AI_TEXT_OFFSET = 24
+const VIEWPORT_PADDING = 24
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function getAIPlacement(
+  editor: Editor,
+  width: number,
+  height: number,
+  position: 'near_selection' | { x: number; y: number }
+): { x: number; y: number } {
+  if (position !== 'near_selection') {
+    return position
+  }
+
+  const viewport = editor.getViewportPageBounds()
+  const selection = editor.getSelectionPageBounds()
+
+  if (!selection) {
+    return {
+      x: clamp(viewport.midX - width / 2, viewport.minX + VIEWPORT_PADDING, viewport.maxX - width - VIEWPORT_PADDING),
+      y: clamp(viewport.midY - height / 2, viewport.minY + VIEWPORT_PADDING, viewport.maxY - height - VIEWPORT_PADDING),
+    }
+  }
+
+  const preferredRightX = selection.maxX + AI_TEXT_OFFSET
+  const preferredLeftX = selection.minX - width - AI_TEXT_OFFSET
+  const preferredY = selection.minY
+
+  const fitsRight = preferredRightX + width <= viewport.maxX - VIEWPORT_PADDING
+  const fitsLeft = preferredLeftX >= viewport.minX + VIEWPORT_PADDING
+
+  let x: number
+  if (fitsRight) {
+    x = preferredRightX
+  } else if (fitsLeft) {
+    x = preferredLeftX
+  } else {
+    const selectionAnchorX = selection.midX - width / 2
+    x = clamp(
+      selectionAnchorX,
+      viewport.minX + VIEWPORT_PADDING,
+      viewport.maxX - width - VIEWPORT_PADDING
+    )
+  }
+
+  const y = clamp(
+    preferredY,
+    viewport.minY + VIEWPORT_PADDING,
+    viewport.maxY - height - VIEWPORT_PADDING
+  )
+
+  return { x, y }
+}
 
 interface ExecutionResult {
   success: boolean
@@ -69,29 +124,15 @@ function executePlaceText(
   editor: Editor,
   params: { text: string; position: string | { x: number; y: number } }
 ): ExecutionResult {
-  let x: number
-  let y: number
-
-  if (params.position === 'near_selection') {
-    const bounds = editor.getSelectionPageBounds()
-    if (bounds) {
-      x = bounds.maxX + AI_TEXT_OFFSET
-      y = bounds.minY
-    } else {
-      // Fallback: center of viewport
-      const viewport = editor.getViewportPageBounds()
-      x = viewport.midX
-      y = viewport.midY
-    }
-  } else {
-    const pos = params.position as { x: number; y: number }
-    x = pos.x
-    y = pos.y
-  }
-
   // Estimate height from text length (rough: 20px per line, ~50 chars per line at 320w)
+  const width = 320
   const estimatedLines = Math.max(1, Math.ceil(params.text.length / 50))
   const estimatedHeight = estimatedLines * 20 + 24
+  const placement =
+    params.position === 'near_selection'
+      ? 'near_selection'
+      : (params.position as { x: number; y: number })
+  const { x, y } = getAIPlacement(editor, width, estimatedHeight, placement)
 
   const shapeId = createShapeId()
   editor.createShape({
@@ -100,9 +141,15 @@ function executePlaceText(
     x,
     y,
     props: {
-      w: 320,
+      w: width,
       h: estimatedHeight,
       text: params.text,
+      messages: '[]',
+      selectionContext: '{}',
+      title: '',
+      canvasId: '',
+      mode: 'simple',
+      status: 'idle',
     },
   })
 
@@ -251,26 +298,12 @@ async function executeRenameBoard(
 export function createAIShape(
   editor: Editor,
   position: 'near_selection' | { x: number; y: number },
-  selectionContext: string
+  selectionContext: string,
+  canvasId: string
 ): TLShapeId {
-  let x: number
-  let y: number
-
-  if (position === 'near_selection') {
-    const bounds = editor.getSelectionPageBounds()
-    if (bounds) {
-      x = bounds.maxX + AI_TEXT_OFFSET
-      y = bounds.minY
-    } else {
-      const viewport = editor.getViewportPageBounds()
-      x = viewport.midX
-      y = viewport.midY
-    }
-  } else {
-    x = position.x
-    y = position.y
-  }
-
+  const width = 360
+  const height = 40
+  const { x, y } = getAIPlacement(editor, width, height, position)
   const shapeId = createShapeId()
   const initialMessage: ChatMessage[] = [
     { role: 'assistant', text: '', timestamp: Date.now() },
@@ -282,12 +315,15 @@ export function createAIShape(
     x,
     y,
     props: {
-      w: 360,
-      h: 40,
+      w: width,
+      h: height,
       text: '',
       messages: JSON.stringify(initialMessage),
       selectionContext,
       title: '',
+      canvasId,
+      mode: 'simple',
+      status: 'waiting',
     },
   })
 
@@ -339,21 +375,48 @@ export async function streamToShape(
               editor.updateShape({
                 id: shapeId,
                 type: 'ai-text',
-                props: { messages: JSON.stringify(messages) },
+                props: {
+                  messages: JSON.stringify(messages),
+                  status: shape.props.status === 'waiting' ? 'streaming' : shape.props.status,
+                },
               })
             }
           } else if (data.type === 'tool_call') {
             toolCalls.push({ name: data.name, input: data.input })
           } else if (data.type === 'error') {
             console.error('[streamToShape] SSE error:', data.message)
+            const shape = editor.getShape(shapeId) as AITextShape | undefined
+            if (shape) {
+              editor.updateShape({
+                id: shapeId,
+                type: 'ai-text',
+                props: { status: 'idle' },
+              })
+            }
+          } else if (data.type === 'done') {
+            const shape = editor.getShape(shapeId) as AITextShape | undefined
+            if (shape) {
+              editor.updateShape({
+                id: shapeId,
+                type: 'ai-text',
+                props: { status: 'idle' },
+              })
+            }
           }
-          // 'done' type — loop will end naturally
         } catch {
           // Skip malformed events
         }
       }
     }
   } finally {
+    const shape = editor.getShape(shapeId) as AITextShape | undefined
+    if (shape && shape.props.status !== 'idle') {
+      editor.updateShape({
+        id: shapeId,
+        type: 'ai-text',
+        props: { status: 'idle' },
+      })
+    }
     reader.releaseLock()
   }
 
