@@ -248,7 +248,7 @@ function WebExportView({ dna, useCase, boardId, imageUrls }: {
         className="flex items-center justify-center gap-2 py-2 rounded-md cursor-pointer text-[12px] font-medium"
         style={{
           backgroundColor: 'var(--color-accent)',
-          color: '#fff',
+          color: 'var(--color-surface)',
           border: 'none',
           fontFamily: 'var(--font-family)',
           opacity: downloading ? 0.7 : 1,
@@ -292,7 +292,7 @@ function PreviewBlock({ content, onCopy, copied }: { content: string; onCopy: ()
         style={{
           backgroundColor: copied ? 'var(--color-accent)' : 'var(--color-surface)',
           border: `1px solid ${copied ? 'var(--color-accent)' : 'var(--color-border)'}`,
-          color: copied ? '#fff' : 'var(--color-muted)',
+          color: copied ? 'var(--color-surface)' : 'var(--color-muted)',
           transition: 'all 150ms ease',
         }}
       >

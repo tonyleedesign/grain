@@ -10,6 +10,7 @@ import { applyTheme } from '@/lib/applyTheme'
 
 interface ThemeContextType {
   theme: GrainTheme
+  isDefaultTheme: boolean
   setTheme: (theme: GrainTheme) => void
   resetTheme: () => void
 }
@@ -18,6 +19,7 @@ const ThemeContext = createContext<ThemeContextType | null>(null)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<GrainTheme>(defaultTheme)
+  const isDefaultTheme = JSON.stringify(theme) === JSON.stringify(defaultTheme)
 
   const setTheme = (newTheme: GrainTheme) => {
     applyTheme(newTheme)
@@ -30,7 +32,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resetTheme }}>
+    <ThemeContext.Provider value={{ theme, isDefaultTheme, setTheme, resetTheme }}>
       {children}
     </ThemeContext.Provider>
   )

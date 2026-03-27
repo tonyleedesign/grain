@@ -13,6 +13,7 @@ export interface GrainTheme {
   }
   typography: {
     fontFamily: string
+    displayFontFamily: string
     fontUrl: string
   }
   radius: {
@@ -40,6 +41,7 @@ export const defaultTheme: GrainTheme = {
   },
   typography: {
     fontFamily: 'Bricolage Grotesque',
+    displayFontFamily: 'Bricolage Grotesque',
     fontUrl: 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@300;400;500;600&display=swap',
   },
   radius: {

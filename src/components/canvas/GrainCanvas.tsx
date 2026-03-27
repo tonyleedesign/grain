@@ -4,13 +4,18 @@
 // Used by both community (/) and private (/canvas) routes.
 // Reference: grain-prd.md Section 5.1, 11.2
 
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Tldraw, TLComponents, TLAsset } from 'tldraw'
 import 'tldraw/tldraw.css'
 import './grain-canvas.css'
 import { uploadImages } from '@/lib/uploadImages'
 import { CanvasUI } from './CanvasUI'
 import { SnapshotCardShapeUtil } from './SnapshotCardShape'
+import { AITextShapeUtil } from './AITextShape'
+import { createGrainImageToolbar } from './GrainImageToolbar'
+import { createGrainContextMenu } from './GrainContextMenu'
+import { GrainMenuPanel } from './GrainMenuPanel'
+import { createGrainToolbar } from './GrainToolbar'
 
 interface GrainCanvasProps {
   canvasType: 'community' | 'private'
@@ -19,15 +24,19 @@ interface GrainCanvasProps {
 }
 
 export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasProps) {
-  const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil], [])
+  const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil, AITextShapeUtil], [])
+
+  // Mutable ref for AI expansion callback — set by CanvasUI, called by toolbars/context menu
+  const askAIRef = useRef<() => void>(() => {})
 
   const components = useMemo<TLComponents>(
     () => ({
-      // We'll override these incrementally as we build:
-      // Toolbar: GrainToolbar,
-      // RichTextToolbar: GrainRichTextToolbar,
+      ImageToolbar: createGrainImageToolbar(() => askAIRef.current()),
+      ContextMenu: createGrainContextMenu(() => askAIRef.current()),
+      MenuPanel: GrainMenuPanel,
+      Toolbar: createGrainToolbar(canvasId),
     }),
-    []
+    [canvasId]
   )
 
   // Custom asset store — routes image uploads through Grain's pipeline
@@ -53,9 +62,10 @@ export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasPro
         assets={assets}
         maxAssetSize={50 * 1024 * 1024}
         inferDarkMode={false}
+        options={{ actionShortcutsLocation: 'menu' }}
         persistenceKey={`grain-${canvasType}-${canvasId}`}
       >
-        <CanvasUI canvasId={canvasId} />
+        <CanvasUI canvasId={canvasId} askAIRef={askAIRef} />
       </Tldraw>
     </div>
   )

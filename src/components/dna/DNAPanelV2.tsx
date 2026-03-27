@@ -13,8 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Medium, WebAppDNA, ImageGenDNA } from '@/types/dna'
 import { getBoardImageUrls } from '@/lib/getBoardImages'
 import { useTheme } from '@/context/ThemeContext'
-import { GrainTheme, defaultTheme } from '@/config/theme'
-import { buildGoogleFontUrl } from '@/lib/google-fonts'
+import { buildThemeFromWebDna } from '@/lib/themeFromDna'
 import { MediumPicker } from './MediumPicker'
 import { DesignerView } from './DesignerView'
 import { ExportView } from './ExportView'
@@ -29,7 +28,7 @@ interface DNAPanelV2Props {
 
 export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
   const editor = useEditor()
-  const { setTheme, resetTheme } = useTheme()
+  const { setTheme, resetTheme, isDefaultTheme } = useTheme()
   const [state, setState] = useState<PanelState>('idle')
   const [boardId, setBoardId] = useState<string | null>(null)
   const [medium, setMedium] = useState<Medium | null>(null)
@@ -42,7 +41,6 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
   const [appealContext, setAppealContext] = useState<string>('')
   const [observations, setObservations] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
-  const [themeApplied, setThemeApplied] = useState(false)
   const [showRegenPrompt, setShowRegenPrompt] = useState(false)
   const [regenReason, setRegenReason] = useState('')
   // Track which board we last loaded to avoid redundant fetches
@@ -301,10 +299,9 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
           </span>
         </div>
         <div className="flex gap-1">
-          {themeApplied && (
+          {!isDefaultTheme && (
             <PanelIconButton title="Reset to default theme" onClick={() => {
               resetTheme()
-              setThemeApplied(false)
             }}>
               <RotateCcw size={14} />
             </PanelIconButton>
@@ -461,52 +458,7 @@ export function DNAPanelV2({ boardName, canvasId, onClose }: DNAPanelV2Props) {
           {medium === 'web' && (
             <ActionButton icon={<Sparkles size={13} />} onClick={() => {
               const webDna = dna as WebAppDNA
-              const colorMap: Record<string, string> = {}
-              for (const c of webDna.color_palette.colors) {
-                colorMap[c.role] = c.hex
-              }
-              const r = webDna.border_radius
-              const shadowMap: Record<string, GrainTheme['shadows']> = {
-                none: { toolbar: 'none', card: 'none', panel: 'none', cursor: 'none' },
-                subtle: defaultTheme.shadows,
-                layered: {
-                  toolbar: '0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)',
-                  card: '0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)',
-                  panel: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
-                  cursor: '0 4px 16px rgba(0,0,0,0.10)',
-                },
-                elevated: {
-                  toolbar: '0 8px 32px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.08)',
-                  card: '0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06)',
-                  panel: '0 12px 48px rgba(0,0,0,0.16), 0 4px 12px rgba(0,0,0,0.08)',
-                  cursor: '0 8px 24px rgba(0,0,0,0.12)',
-                },
-              }
-              setTheme({
-                colors: {
-                  bg: colorMap.light || defaultTheme.colors.bg,
-                  surface: colorMap.light || defaultTheme.colors.surface,
-                  accent: colorMap.primary || defaultTheme.colors.accent,
-                  text: colorMap.dark || defaultTheme.colors.text,
-                  muted: colorMap.secondary || defaultTheme.colors.muted,
-                  border: colorMap.secondary || defaultTheme.colors.border,
-                },
-                typography: {
-                  fontFamily: webDna.typography.display.family,
-                  fontUrl: buildGoogleFontUrl([
-                    { family: webDna.typography.display.family, weights: [webDna.typography.display.weight] },
-                    { family: webDna.typography.body.family, weights: [webDna.typography.body.weight] },
-                  ]),
-                },
-                radius: {
-                  sm: `${Math.round(r / 2)}px`,
-                  md: `${r}px`,
-                  lg: `${Math.round(r * 1.5)}px`,
-                  xl: `${r * 2}px`,
-                },
-                shadows: shadowMap[webDna.shadow_style] || defaultTheme.shadows,
-              })
-              setThemeApplied(true)
+              setTheme(buildThemeFromWebDna(webDna))
             }}>
               Apply to Grain
             </ActionButton>

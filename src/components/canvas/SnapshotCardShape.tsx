@@ -172,10 +172,10 @@ export class SnapshotCardShapeUtil extends ShapeUtil<SnapshotCardShape> {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {antis.slice(0, 2).map((ap, i) => (
                 <div key={i} style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <span style={{ color: '#4a7c4f' }}>&#x2713;</span>
+                  <span style={{ color: 'var(--color-accent)' }}>&#x2713;</span>
                   <span>{ap.this_is}</span>
                   <span style={{ color: 'var(--color-muted)' }}>|</span>
-                  <span style={{ color: '#b44040' }}>&#x2717;</span>
+                  <span style={{ color: 'var(--destructive)' }}>&#x2717;</span>
                   <span style={{ color: 'var(--color-muted)' }}>{ap.not_that}</span>
                 </div>
               ))}
