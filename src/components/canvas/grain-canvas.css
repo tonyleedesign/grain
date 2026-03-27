@@ -28,6 +28,7 @@
 /* Style tldraw's default UI chrome to match Grain */
 .grain-canvas-wrapper .tlui-layout {
   --grain-ui-inset: var(--tl-space-4);
+  --tl-layer-toasts: 1200;
   font-family: var(--font-family);
   color: var(--color-text);
   padding: var(--grain-ui-inset) var(--grain-ui-inset) 0;
@@ -221,6 +222,7 @@
   -webkit-user-select: text !important;
   user-select: text !important;
 }
+
 .grain-dna-panel button,
 .grain-dna-panel [role="tablist"] {
   -webkit-user-select: none !important;

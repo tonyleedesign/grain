@@ -5,9 +5,10 @@
 // Reference: grain-prd.md Section 11.3
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useEditor, createShapeId, TLShapeId } from 'tldraw'
+import { createPortal } from 'react-dom'
+import { useEditor, createShapeId, TLShapeId, TldrawUiIcon } from 'tldraw'
 import { motion } from 'framer-motion'
-import { X, GripVertical, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-react'
+import { X, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Medium, WebAppDNA, ImageGenDNA } from '@/types/dna'
@@ -45,9 +46,14 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
   const [feedback, setFeedback] = useState<string | null>(null)
   const [showRegenPrompt, setShowRegenPrompt] = useState(false)
   const [regenReason, setRegenReason] = useState('')
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
   // Track which board we last loaded to avoid redundant fetches
   const [loadedBoardName, setLoadedBoardName] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setPortalTarget(document.querySelector('.tlui-layout') as HTMLElement | null)
+  }, [])
 
   // Intercept clipboard and keyboard events at the native DOM level to prevent
   // tldraw's document-level listeners from capturing copy/paste inside the panel.
@@ -282,7 +288,7 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
     })
   }, [boardId, dna, medium, boardName, editor, frameShapeId])
 
-  return (
+  const panelContent = (
     <motion.div
       ref={panelRef}
       key="dna-panel"
@@ -290,8 +296,11 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
       transition={{ type: 'tween', duration: 0.2, ease: 'easeInOut' }}
-      className="grain-dna-panel fixed top-0 right-0 w-1/3 min-w-80 h-screen flex flex-col z-1000"
+      className="grain-dna-panel fixed top-0 right-0 w-1/3 min-w-80 h-screen flex flex-col"
       style={{
+        zIndex: 'var(--tl-layer-panels)',
+        pointerEvents: 'all',
+        touchAction: 'auto',
         backgroundColor: 'var(--color-surface)',
         boxShadow: 'var(--shadow-panel)',
         borderRadius: 'var(--radius-lg) 0 0 var(--radius-lg)',
@@ -334,7 +343,7 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
             </PanelIconButton>
           )}
           <PanelIconButton title="Detach as snapshot" onClick={handleDetach}>
-            <GripVertical size={14} />
+            <TldrawUiIcon icon="tool-screenshot" label="Detach as snapshot" />
           </PanelIconButton>
           <PanelIconButton title="Close" onClick={() => { editor.selectNone(); onClose() }}>
             <X size={14} />
@@ -497,6 +506,10 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
       )}
     </motion.div>
   )
+
+  if (!portalTarget) return null
+
+  return createPortal(panelContent, portalTarget)
 }
 
 function PanelIconButton({

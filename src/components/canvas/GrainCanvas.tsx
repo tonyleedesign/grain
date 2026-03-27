@@ -4,8 +4,8 @@
 // Used by both community (/) and private (/canvas) routes.
 // Reference: grain-prd.md Section 5.1, 11.2
 
-import { useMemo } from 'react'
-import { Tldraw, TLComponents, TLAsset } from 'tldraw'
+import { useCallback, useMemo } from 'react'
+import { Editor, Tldraw, TLComponents, TLAsset } from 'tldraw'
 import 'tldraw/tldraw.css'
 import './grain-canvas.css'
 import { uploadImages } from '@/lib/uploadImages'
@@ -18,6 +18,7 @@ import { GrainMenuPanel } from './GrainMenuPanel'
 import { GrainMainMenu } from './GrainMainMenu'
 import { GrainPageMenu } from './GrainPageMenu'
 import { createGrainToolbar } from './GrainToolbar'
+import { useCanvasDocumentSync } from '@/lib/useCanvasDocumentSync'
 
 function dispatchAskAI() {
   window.dispatchEvent(new Event('grain:ask-ai'))
@@ -27,10 +28,16 @@ interface GrainCanvasProps {
   canvasType: 'community' | 'private'
   canvasId: string
   uploadedBy?: string | null
+  accessToken?: string | null
 }
 
-export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasProps) {
+export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, accessToken }: GrainCanvasProps) {
+  const canvasType = _canvasType
   const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil, AITextShapeUtil], [])
+  const { snapshot, hasServerDocument, loading, error, handleMount } = useCanvasDocumentSync({
+    canvasId,
+    accessToken,
+  })
 
   const components = useMemo<TLComponents>(
     () => ({
@@ -59,16 +66,62 @@ export function GrainCanvas({ canvasType, canvasId, uploadedBy }: GrainCanvasPro
     [canvasId, uploadedBy]
   )
 
+  const onMount = useCallback(
+    (editor: Editor) => {
+      if (snapshot?.document) {
+        editor.loadSnapshot({ document: snapshot.document })
+      }
+
+      return handleMount(editor)
+    },
+    [handleMount, snapshot]
+  )
+
+  if (loading) {
+    return (
+      <div
+        className="grain-canvas-wrapper"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--color-bg)',
+          color: 'var(--color-muted)',
+        }}
+      >
+        Loading canvas...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div
+        className="grain-canvas-wrapper"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--color-bg)',
+          color: 'var(--destructive)',
+        }}
+      >
+        {error}
+      </div>
+    )
+  }
+
   return (
     <div className="grain-canvas-wrapper">
       <Tldraw
         shapeUtils={customShapeUtils}
         components={components}
         assets={assets}
+        onMount={onMount}
+        persistenceKey={hasServerDocument ? undefined : `grain-${canvasType}-${canvasId}`}
         maxAssetSize={50 * 1024 * 1024}
         inferDarkMode={false}
         options={{ actionShortcutsLocation: 'menu' }}
-        persistenceKey={`grain-${canvasType}-${canvasId}`}
       >
         <CanvasUI canvasId={canvasId} />
       </Tldraw>

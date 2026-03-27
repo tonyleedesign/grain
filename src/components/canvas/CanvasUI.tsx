@@ -200,16 +200,14 @@ export function CanvasUI({ canvasId }: CanvasUIProps) {
         onForceExpandedConsumed={() => setToolbarAI(false)}
         onVisibilityChange={setAiBarVisible}
       />
-      {boardToRender && (
-        <div style={{ display: panelVisible ? 'contents' : 'none' }}>
-          <DNAPanelV2
-            boardName={boardToRender}
-            boardId={activeBoard?.boardId}
-            frameShapeId={activeBoard?.frameShapeId}
-            canvasId={canvasId}
-            onClose={() => setPanelVisible(false)}
-          />
-        </div>
+      {boardToRender && panelVisible && (
+        <DNAPanelV2
+          boardName={boardToRender}
+          boardId={activeBoard?.boardId}
+          frameShapeId={activeBoard?.frameShapeId}
+          canvasId={canvasId}
+          onClose={() => setPanelVisible(false)}
+        />
       )}
     </>
   )
