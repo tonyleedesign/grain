@@ -12,6 +12,7 @@ import {
   RecordProps,
 } from 'tldraw'
 import { ChatMessage } from '@/types/canvas-ai'
+import './ai-chat-card.css'
 
 // Module augmentation to register custom shape type with tldraw
 declare module '@tldraw/tlschema' {
