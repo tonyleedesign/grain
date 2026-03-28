@@ -1,9 +1,23 @@
 // Build Canvas AI selection context from tldraw editor state.
 // Reads selected shapes, classifies them, and builds the context object.
 
-import { Editor, TLImageShape, TLShape, TLShapeId } from 'tldraw'
+import { Editor, TLBookmarkAsset, TLImageShape, TLShape, TLShapeId } from 'tldraw'
 import type { CanvasAISelectionContext } from '@/types/canvas-ai'
 import { getBoardIdFromMeta } from './board-identity'
+
+function getParentBoardInfo(editor: Editor, shape: TLShape) {
+  const parent = editor.getShape(shape.parentId as TLShapeId)
+  if (parent?.type !== 'frame') return {}
+
+  return {
+    boardName: (parent.props as { name?: string }).name,
+    boardId: getBoardIdFromMeta(parent),
+  }
+}
+
+function uniqueUrls(urls: Array<string | undefined | null>) {
+  return [...new Set(urls.filter((url): url is string => !!url))]
+}
 
 export function buildSelectionContext(editor: Editor): CanvasAISelectionContext {
   const selected = editor.getSelectedShapes()
@@ -12,6 +26,7 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
   // Classify selected shapes
   const images: TLImageShape[] = []
   const boards: TLShape[] = []
+  const links: TLShape[] = []
   const otherShapes: TLShape[] = []
 
   for (const shape of selected) {
@@ -19,6 +34,8 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
       images.push(shape as TLImageShape)
     } else if (shape.type === 'frame') {
       boards.push(shape)
+    } else if (shape.type === 'bookmark' || shape.type === 'embed') {
+      links.push(shape)
     } else {
       otherShapes.push(shape)
     }
@@ -26,13 +43,13 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
 
   // Determine selection type
   let selectionType: CanvasAISelectionContext['selectionType']
-  if (images.length > 0 && boards.length > 0) {
+  if (images.length > 0 && (boards.length > 0 || links.length > 0)) {
     selectionType = 'mixed'
   } else if (images.length > 0) {
     selectionType = 'image'
   } else if (boards.length > 0) {
     selectionType = 'board'
-  } else if (otherShapes.length > 0) {
+  } else if (links.length > 0 || otherShapes.length > 0) {
     selectionType = 'shapes'
   } else {
     selectionType = 'none'
@@ -82,6 +99,46 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
     }
   }
 
+  if (links.length > 0) {
+    const linkDetails: NonNullable<CanvasAISelectionContext['selectedLinks']>['links'] = links.map((shape) => {
+      const props = shape.props as { url?: string; assetId?: string | null }
+      const asset =
+        shape.type === 'bookmark' && props.assetId
+          ? (editor.getAsset(props.assetId as Parameters<Editor['getAsset']>[0]) as TLBookmarkAsset | undefined)
+          : undefined
+      const boardInfo = getParentBoardInfo(editor, shape)
+
+      return {
+        url: props.url || '',
+        title: asset?.props.title || undefined,
+        description: asset?.props.description || undefined,
+        previewImageUrl: asset?.props.image || undefined,
+        boardId: boardInfo.boardId,
+        boardName: boardInfo.boardName,
+        shapeType: shape.type as 'bookmark' | 'embed',
+      }
+    })
+
+    context.selectedLinks = {
+      urls: uniqueUrls(linkDetails.map((link) => link.url)),
+      links: linkDetails.filter((link) => link.url),
+    }
+
+    const previewUrls = uniqueUrls(linkDetails.map((link) => link.previewImageUrl))
+    if (previewUrls.length > 0) {
+      context.selectedImages = {
+        urls: uniqueUrls([...(context.selectedImages?.urls || []), ...previewUrls]),
+        ungrouped: context.selectedImages?.ungrouped ?? true,
+        boardId:
+          context.selectedImages?.boardId ||
+          (linkDetails.length === 1 ? linkDetails[0].boardId : undefined),
+        boardName:
+          context.selectedImages?.boardName ||
+          (linkDetails.length === 1 ? linkDetails[0].boardName : undefined),
+      }
+    }
+  }
+
   // Add board details if boards are selected
   if (boards.length > 0) {
     const boardDetails = boards.map((board) => {
@@ -122,6 +179,14 @@ export function buildSelectionContext(editor: Editor): CanvasAISelectionContext 
           ? (boards[0].props as { name?: string }).name
           : undefined,
       }
+    }
+  }
+
+  if (links.length > 0 || otherShapes.length > 0) {
+    const shapeTypes = [...new Set([...links, ...otherShapes].map((shape) => shape.type))].sort()
+    context.selectedShapes = {
+      count: links.length + otherShapes.length,
+      shapeTypes,
     }
   }
 

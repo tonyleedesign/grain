@@ -18,6 +18,7 @@ interface AIActionBarProps {
   canvasId: string
   onExtractDna?: () => void
   forceExpanded?: boolean
+  forceAnchor?: { x: number; y: number } | null
   onForceExpandedConsumed?: () => void
   onVisibilityChange?: (visible: boolean) => void
 }
@@ -65,6 +66,7 @@ export function AIActionBar({
   canvasId,
   onExtractDna,
   forceExpanded,
+  forceAnchor,
   onForceExpandedConsumed,
   onVisibilityChange,
 }: AIActionBarProps) {
@@ -74,6 +76,7 @@ export function AIActionBar({
   const [isProcessing, setIsProcessing] = useState(false)
   const [thinkingStatus, setThinkingStatus] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [floatingAnchor, setFloatingAnchor] = useState<{ x: number; y: number } | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -133,9 +136,10 @@ export function AIActionBar({
   useEffect(() => {
     if (forceExpanded) {
       setExpanded(true)
+      setFloatingAnchor(forceAnchor ?? null)
       onForceExpandedConsumed?.()
     }
-  }, [forceExpanded, onForceExpandedConsumed])
+  }, [forceExpanded, forceAnchor, onForceExpandedConsumed])
 
   // Close on click outside
   useEffect(() => {
@@ -144,12 +148,14 @@ export function AIActionBar({
       if (barRef.current && !barRef.current.contains(e.target as Node)) {
         setExpanded(false)
         setInputValue('')
+        setFloatingAnchor(null)
       }
     }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setExpanded(false)
         setInputValue('')
+        setFloatingAnchor(null)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -172,6 +178,7 @@ export function AIActionBar({
     setExpanded(false)
     setInputValue('')
     setShowDeleteConfirm(false)
+    setFloatingAnchor(null)
   }, [selectionKey])
 
   useEffect(() => {
@@ -317,7 +324,7 @@ export function AIActionBar({
   }, [editor])
 
   // Floating mode: expanded with no selection (context menu on blank canvas)
-  const isFloatingMode = !hasSelection && expanded
+  const isFloatingMode = expanded && (!!floatingAnchor || !hasSelection)
 
   // Only render when expanded, processing, or confirming delete
   if (!expanded && !isProcessing && !showDeleteConfirm) return null
@@ -423,10 +430,12 @@ export function AIActionBar({
   return (
     <div
       ref={barRef}
-      style={{
-        position: 'fixed',
-        ...(isFloatingMode
-          ? { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }
+        style={{
+          position: 'fixed',
+          ...(isFloatingMode
+          ? floatingAnchor
+            ? { left: floatingAnchor.x + 8, top: floatingAnchor.y - 8, transform: 'translate(0, -100%)' }
+            : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }
           : barPosition
             ? { left: barPosition.x, top: barPosition.y - 60, transform: 'translate(-50%, -100%)' }
             : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }),

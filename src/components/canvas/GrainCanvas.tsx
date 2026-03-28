@@ -20,8 +20,8 @@ import { GrainPageMenu } from './GrainPageMenu'
 import { createGrainToolbar } from './GrainToolbar'
 import { useCanvasDocumentSync } from '@/lib/useCanvasDocumentSync'
 
-function dispatchAskAI() {
-  window.dispatchEvent(new Event('grain:ask-ai'))
+function dispatchAskAI(anchor?: { x: number; y: number }) {
+  window.dispatchEvent(new CustomEvent('grain:ask-ai', { detail: { anchor } }))
 }
 
 interface GrainCanvasProps {

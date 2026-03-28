@@ -32,6 +32,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const [activeBoard, setActiveBoard] = useState<ActiveBoard | null>(null)
   const [panelVisible, setPanelVisible] = useState(false)
   const [toolbarAI, setToolbarAI] = useState(false)
+  const [toolbarAIAnchor, setToolbarAIAnchor] = useState<{ x: number; y: number } | null>(null)
   const [aiBarVisible, setAiBarVisible] = useState(false)
   const [revertAnchor, setRevertAnchor] = useState<{ left: number; top: number } | null>(null)
   const [lastBoardName, setLastBoardName] = useState<string | null>(null)
@@ -40,7 +41,11 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
 
   // Wire the AI button callbacks (image toolbar, context menu, selection toolbar)
   useEffect(() => {
-    const handleAskAI = () => setToolbarAI(true)
+    const handleAskAI = (event: Event) => {
+      const customEvent = event as CustomEvent<{ anchor?: { x: number; y: number } }>
+      setToolbarAIAnchor(customEvent.detail?.anchor || null)
+      setToolbarAI(true)
+    }
     window.addEventListener('grain:ask-ai', handleAskAI)
     return () => window.removeEventListener('grain:ask-ai', handleAskAI)
   }, [])
@@ -128,7 +133,10 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     }
   }, [editor])
 
-  const handleAskAI = useCallback(() => setToolbarAI(true), [])
+  const handleAskAI = useCallback(() => {
+    setToolbarAIAnchor(null)
+    setToolbarAI(true)
+  }, [])
 
   const boardToRender = activeBoard?.boardName || lastBoardName
 
@@ -314,7 +322,10 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         canvasId={canvasId}
         onExtractDna={handleExtractDna}
         forceExpanded={toolbarAI}
-        onForceExpandedConsumed={() => setToolbarAI(false)}
+        forceAnchor={toolbarAIAnchor}
+        onForceExpandedConsumed={() => {
+          setToolbarAI(false)
+        }}
         onVisibilityChange={setAiBarVisible}
       />
       {boardToRender && panelVisible && (
