@@ -23,6 +23,14 @@ interface AIActionBarProps {
   onVisibilityChange?: (visible: boolean) => void
 }
 
+function isFinitePoint(value: { x: number; y: number } | null | undefined): value is { x: number; y: number } {
+  return Boolean(
+    value &&
+      Number.isFinite(value.x) &&
+      Number.isFinite(value.y)
+  )
+}
+
 // Contextual suggestions based on selection type
 function getSuggestions(
   selectionType: string,
@@ -127,7 +135,8 @@ export function AIActionBar({
     () => {
       const bounds = editor.getSelectionPageBounds()
       if (!bounds) return null
-      return editor.pageToViewport({ x: bounds.midX, y: bounds.minY })
+      const point = editor.pageToViewport({ x: bounds.midX, y: bounds.minY })
+      return isFinitePoint(point) ? point : null
     },
     [editor]
   )
@@ -325,13 +334,15 @@ export function AIActionBar({
 
   // Floating mode: expanded with no selection (context menu on blank canvas)
   const isFloatingMode = expanded && (!!floatingAnchor || !hasSelection)
+  const safeFloatingAnchor = isFinitePoint(floatingAnchor) ? floatingAnchor : null
+  const safeBarPosition = isFinitePoint(barPosition) ? barPosition : null
 
   // Only render when expanded, processing, or confirming delete
   if (!expanded && !isProcessing && !showDeleteConfirm) return null
 
   // Show thinking indicator while processing
   if (isProcessing) {
-    if (barPosition) {
+    if (safeBarPosition) {
       return <AIThinkingIndicator status={thinkingStatus} />
     }
     return (
@@ -363,13 +374,13 @@ export function AIActionBar({
   }
 
   // Show delete confirmation
-  if (showDeleteConfirm && barPosition) {
+  if (showDeleteConfirm && safeBarPosition) {
     return (
       <div
         style={{
           position: 'fixed',
-          left: barPosition.x,
-          top: barPosition.y - 12,
+          left: safeBarPosition.x,
+          top: safeBarPosition.y - 12,
           transform: 'translate(-50%, -100%)',
           zIndex: 1000,
           display: 'flex',
@@ -433,11 +444,11 @@ export function AIActionBar({
         style={{
           position: 'fixed',
           ...(isFloatingMode
-          ? floatingAnchor
-            ? { left: floatingAnchor.x + 8, top: floatingAnchor.y - 8, transform: 'translate(0, -100%)' }
+          ? safeFloatingAnchor
+            ? { left: safeFloatingAnchor.x + 8, top: safeFloatingAnchor.y - 8, transform: 'translate(0, -100%)' }
             : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }
-          : barPosition
-            ? { left: barPosition.x, top: barPosition.y - 60, transform: 'translate(-50%, -100%)' }
+          : safeBarPosition
+            ? { left: safeBarPosition.x, top: safeBarPosition.y - 60, transform: 'translate(-50%, -100%)' }
             : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }),
         zIndex: 1000,
         display: 'flex',

@@ -11,7 +11,13 @@ import { AIActionBar } from './AIActionBar'
 import { GrainSelectionToolbar } from './GrainSelectionToolbar'
 import { DNAPanelV2 } from '../dna/DNAPanelV2'
 import { useTheme } from '@/context/ThemeContext'
-import { applyBoardLinkToShape, findContainingBoardFrame, getBoardIdFromMeta } from '@/lib/board-identity'
+import {
+  applyBoardLinkToShape,
+  clearBoardLinkFromShape,
+  findContainingBoardFrame,
+  getBoardIdFromMeta,
+  hasLiveBoardFrame,
+} from '@/lib/board-identity'
 import { applyPendingCaptures } from '@/lib/capture-placement'
 import type { PendingCapture } from '@/types/captures'
 
@@ -36,8 +42,10 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const [aiBarVisible, setAiBarVisible] = useState(false)
   const [revertAnchor, setRevertAnchor] = useState<{ left: number; top: number } | null>(null)
   const [lastBoardName, setLastBoardName] = useState<string | null>(null)
+  const [dnaExtracting, setDnaExtracting] = useState(false)
   const isApplyingCapturesRef = useRef(false)
   const capturePollTimeoutRef = useRef<number | null>(null)
+  const relinkingFramesRef = useRef(new Set<string>())
 
   // Wire the AI button callbacks (image toolbar, context menu, selection toolbar)
   useEffect(() => {
@@ -51,12 +59,90 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   }, [])
 
   useEffect(() => {
-    const shouldLinkShape = (shapeId: TLShapeId) => {
+    const syncFrameBoardChildren = (frameId: TLShapeId, boardId: string) => {
+      const childIds = editor.getSortedChildIdsForParent(frameId)
+      for (const childId of childIds) {
+        const child = editor.getShape(childId as TLShapeId)
+        if (!child) continue
+        applyBoardLinkToShape(editor, child, boardId)
+      }
+    }
+
+    const ensureFrameBoardIdentity = async (shapeId: TLShapeId) => {
+      const frame = editor.getShape(shapeId)
+      if (!frame || frame.type !== 'frame') return
+
+      const boardId = getBoardIdFromMeta(frame)
+      const boardName = ((frame.props as { name?: string }).name || '').trim()
+      if (!boardId || !boardName || relinkingFramesRef.current.has(shapeId)) return
+
+      relinkingFramesRef.current.add(shapeId)
+
+      try {
+        const boardResponse = await fetch(
+          `/api/boards?${new URLSearchParams({ boardId, canvasId }).toString()}`
+        )
+
+        if (boardResponse.ok) {
+          const boardData = (await boardResponse.json()) as { id?: string; frame_shape_id?: string | null }
+          if (boardData.id === boardId && boardData.frame_shape_id === frame.id) {
+            syncFrameBoardChildren(frame.id, boardId)
+            return
+          }
+        }
+
+        const cloneResponse = await fetch('/api/boards/clone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceBoardId: boardId,
+            canvasId,
+            frameShapeId: frame.id,
+            name: boardName,
+          }),
+        })
+
+        if (!cloneResponse.ok) return
+
+        const cloneData = (await cloneResponse.json()) as { id?: string }
+        if (!cloneData.id) return
+
+        editor.updateShape({
+          id: frame.id,
+          type: 'frame',
+          meta: { ...(frame.meta || {}), boardId: cloneData.id },
+        })
+
+        syncFrameBoardChildren(frame.id, cloneData.id)
+      } catch {
+        return
+      } finally {
+        relinkingFramesRef.current.delete(shapeId)
+      }
+    }
+
+    const shouldLinkShape = (shapeId: TLShapeId, mode: 'create' | 'change') => {
       const shape = editor.getShape(shapeId)
-      if (!shape || shape.type === 'frame') return
+      if (!shape) return
+
+      if (shape.type === 'frame') {
+        void ensureFrameBoardIdentity(shape.id)
+        return
+      }
 
       const containingFrame = findContainingBoardFrame(editor, shape)
-      if (!containingFrame) return
+      if (!containingFrame) {
+        const staleBoardId = getBoardIdFromMeta(shape)
+        if (staleBoardId && mode === 'create') {
+          clearBoardLinkFromShape(editor, shape)
+          return
+        }
+
+        if (staleBoardId && !hasLiveBoardFrame(editor, staleBoardId)) {
+          clearBoardLinkFromShape(editor, shape)
+        }
+        return
+      }
 
       const boardId = getBoardIdFromMeta(containingFrame)
       if (!boardId) return
@@ -66,19 +152,19 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
 
     const removeCreate = editor.sideEffects.registerAfterCreateHandler('shape', (shape, source) => {
       if (source !== 'user') return
-      shouldLinkShape(shape.id)
+      shouldLinkShape(shape.id, 'create')
     })
 
     const removeChange = editor.sideEffects.registerAfterChangeHandler('shape', (_prev, next, source) => {
       if (source !== 'user') return
-      shouldLinkShape(next.id)
+      shouldLinkShape(next.id, 'change')
     })
 
     return () => {
       removeCreate()
       removeChange()
     }
-  }, [editor])
+  }, [canvasId, editor])
 
   // Watch for selection changes reactively
   const selectedShapes = useValue(
@@ -317,7 +403,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
           Revert
         </button>
       )}
-      {!aiBarVisible && <GrainSelectionToolbar onAskAI={handleAskAI} />}
+      {!aiBarVisible && <GrainSelectionToolbar canvasId={canvasId} onAskAI={handleAskAI} />}
       <AIActionBar
         canvasId={canvasId}
         onExtractDna={handleExtractDna}
@@ -328,15 +414,76 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         }}
         onVisibilityChange={setAiBarVisible}
       />
-      {boardToRender && panelVisible && (
+      <BoardProcessingOverlay
+        frameShapeId={activeBoard?.frameShapeId ?? null}
+        active={dnaExtracting}
+        label="Extracting DNA..."
+      />
+      {boardToRender && (
         <DNAPanelV2
           boardName={boardToRender}
           boardId={activeBoard?.boardId}
           frameShapeId={activeBoard?.frameShapeId}
           canvasId={canvasId}
+          isOpen={panelVisible}
           onClose={() => setPanelVisible(false)}
+          onExtractionStateChange={setDnaExtracting}
         />
       )}
     </>
+  )
+}
+
+function BoardProcessingOverlay({
+  frameShapeId,
+  active,
+  label,
+}: {
+  frameShapeId: TLShapeId | null
+  active: boolean
+  label: string
+}) {
+  const editor = useEditor()
+
+  const overlayBounds = useValue(
+    'boardProcessingOverlayBounds',
+    () => {
+      if (!active || !frameShapeId) return null
+
+      const frame = editor.getShape(frameShapeId)
+      if (!frame || frame.type !== 'frame') return null
+
+      const bounds = editor.getShapePageBounds(frame)
+      if (!bounds) return null
+
+      const topLeft = editor.pageToViewport({ x: bounds.minX, y: bounds.minY })
+      const bottomRight = editor.pageToViewport({ x: bounds.maxX, y: bounds.maxY })
+
+      return {
+        left: topLeft.x,
+        top: topLeft.y,
+        width: Math.max(0, bottomRight.x - topLeft.x),
+        height: Math.max(0, bottomRight.y - topLeft.y),
+      }
+    },
+    [active, editor, frameShapeId]
+  )
+
+  if (!overlayBounds) return null
+
+  return (
+    <div
+      className="grain-board-processing-overlay"
+      style={{
+        left: overlayBounds.left,
+        top: overlayBounds.top,
+        width: overlayBounds.width,
+        height: overlayBounds.height,
+      }}
+    >
+      <div className="grain-board-processing-overlay__label">
+        {label}
+      </div>
+    </div>
   )
 }

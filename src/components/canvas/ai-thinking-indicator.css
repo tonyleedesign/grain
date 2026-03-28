@@ -1,0 +1,59 @@
+.grain-ai-thinking-indicator {
+  overflow: hidden;
+  animation: grain-ai-thinking-border-pulse 2.4s ease-in-out infinite;
+}
+
+.grain-ai-thinking-indicator::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-accent) 16%, transparent) 36%,
+    color-mix(in srgb, var(--color-accent) 28%, transparent) 50%,
+    color-mix(in srgb, var(--color-accent) 16%, transparent) 64%,
+    transparent 100%
+  );
+  background-size: 220% 220%;
+  animation: grain-ai-thinking-sweep 2.1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.grain-ai-thinking-indicator__icon,
+.grain-ai-thinking-indicator__text {
+  position: relative;
+  z-index: 1;
+}
+
+.grain-ai-thinking-indicator__icon {
+  animation: grain-ai-thinking-icon-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes grain-ai-thinking-border-pulse {
+  0%, 100% {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  }
+  50% {
+    border-color: var(--color-accent);
+  }
+}
+
+@keyframes grain-ai-thinking-sweep {
+  0% {
+    background-position: -40% -40%;
+  }
+  100% {
+    background-position: 140% 140%;
+  }
+}
+
+@keyframes grain-ai-thinking-icon-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

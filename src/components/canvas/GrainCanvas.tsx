@@ -12,6 +12,7 @@ import { uploadImages } from '@/lib/uploadImages'
 import { CanvasUI } from './CanvasUI'
 import { SnapshotCardShapeUtil } from './SnapshotCardShape'
 import { AITextShapeUtil } from './AITextShape'
+import { GrainBookmarkShapeUtil } from './GrainBookmarkShape'
 import { createGrainImageToolbar } from './GrainImageToolbar'
 import { createGrainContextMenu } from './GrainContextMenu'
 import { GrainMenuPanel } from './GrainMenuPanel'
@@ -33,7 +34,10 @@ interface GrainCanvasProps {
 
 export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, accessToken }: GrainCanvasProps) {
   const canvasType = _canvasType
-  const customShapeUtils = useMemo(() => [SnapshotCardShapeUtil, AITextShapeUtil], [])
+  const customShapeUtils = useMemo(
+    () => [SnapshotCardShapeUtil, AITextShapeUtil, GrainBookmarkShapeUtil],
+    []
+  )
   const { snapshot, hasServerDocument, loading, error, handleMount } = useCanvasDocumentSync({
     canvasId,
     accessToken,
@@ -41,7 +45,7 @@ export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, acc
 
   const components = useMemo<TLComponents>(
     () => ({
-      ImageToolbar: createGrainImageToolbar(dispatchAskAI),
+      ImageToolbar: createGrainImageToolbar(dispatchAskAI, canvasId),
       ContextMenu: createGrainContextMenu(dispatchAskAI),
       MenuPanel: GrainMenuPanel,
       MainMenu: GrainMainMenu,

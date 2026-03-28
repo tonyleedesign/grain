@@ -16,10 +16,13 @@ import {
 } from 'tldraw'
 import { useCallback } from 'react'
 import { AISparkleIcon } from './AISparkleIcon'
+import { GroupBoardIcon } from './GroupBoardIcon'
 import { cleanupBoardArtifacts } from '@/lib/board-cleanup'
 import { getBoardIdFromMeta } from '@/lib/board-identity'
+import { groupShapesIntoBoard, isManuallyGroupableShape } from '@/lib/board-grouping'
 
 interface GrainSelectionToolbarProps {
+  canvasId: string
   onAskAI: () => void
 }
 
@@ -27,7 +30,7 @@ interface GrainSelectionToolbarProps {
  * Contextual toolbar for non-image, non-video selections.
  * Renders directly inside CanvasUI (no TLComponents slot needed).
  */
-export function GrainSelectionToolbar({ onAskAI }: GrainSelectionToolbarProps) {
+export function GrainSelectionToolbar({ canvasId, onAskAI }: GrainSelectionToolbarProps) {
   const editor = useEditor()
 
   // Only show when we have a selection that's NOT a single image/video
@@ -69,12 +72,18 @@ export function GrainSelectionToolbar({ onAskAI }: GrainSelectionToolbarProps) {
       getSelectionBounds={getSelectionBounds}
       label="Selection toolbar"
     >
-      <GrainSelectionToolbarContent onAskAI={onAskAI} />
+      <GrainSelectionToolbarContent canvasId={canvasId} onAskAI={onAskAI} />
     </TldrawUiContextualToolbar>
   )
 }
 
-function GrainSelectionToolbarContent({ onAskAI }: { onAskAI: () => void }) {
+function GrainSelectionToolbarContent({
+  canvasId,
+  onAskAI,
+}: {
+  canvasId: string
+  onAskAI: () => void
+}) {
   const editor = useEditor()
   const actions = useActions()
   const { addToast } = useToasts()
@@ -90,6 +99,19 @@ function GrainSelectionToolbarContent({ onAskAI }: { onAskAI: () => void }) {
   )
 
   const canCleanupBoard = Boolean(selectedBoard)
+  const selectedShapes = useValue(
+    'selectedShapesForManualGroup',
+    () => editor.getSelectedShapes(),
+    [editor]
+  )
+  const selectedGroupableArtifacts = useValue(
+    'selectedGroupableArtifacts',
+    () => selectedShapes.filter((shape) => isManuallyGroupableShape(editor, shape)),
+    [editor, selectedShapes]
+  )
+  const canGroupSelection =
+    selectedGroupableArtifacts.length > 0 &&
+    selectedGroupableArtifacts.length === selectedShapes.length
 
   const handleCleanupBoard = useCallback(() => {
     if (!selectedBoard) return
@@ -122,6 +144,27 @@ function GrainSelectionToolbarContent({ onAskAI }: { onAskAI: () => void }) {
     })
   }, [addToast, editor, selectedBoard])
 
+  const handleGroupSelection = useCallback(async () => {
+    if (!canGroupSelection) return
+
+    try {
+      const result = await groupShapesIntoBoard(editor, canvasId, selectedGroupableArtifacts)
+      if (!result) return
+
+      addToast({
+        title: 'Board created',
+        description: `Grouped ${result.count} item${result.count === 1 ? '' : 's'} into ${result.boardName}.`,
+        severity: 'success',
+      })
+    } catch (error) {
+      addToast({
+        title: 'Grouping failed',
+        description: error instanceof Error ? error.message : 'Failed to create board.',
+        severity: 'error',
+      })
+    }
+  }, [addToast, canGroupSelection, canvasId, editor, selectedGroupableArtifacts])
+
   return (
     <>
       <TldrawUiToolbarButton
@@ -138,6 +181,20 @@ function GrainSelectionToolbarContent({ onAskAI }: { onAskAI: () => void }) {
       >
         <TldrawUiButtonIcon small icon="duplicate" />
       </TldrawUiToolbarButton>
+      {canGroupSelection && (
+        <TldrawUiToolbarButton
+          type="icon"
+          title="Group as board"
+          onClick={() => {
+            void handleGroupSelection()
+          }}
+        >
+          <TldrawUiButtonIcon
+            small
+            icon={<GroupBoardIcon size={13} />}
+          />
+        </TldrawUiToolbarButton>
+      )}
       {canCleanupBoard && (
         <TldrawUiToolbarButton
           type="icon"

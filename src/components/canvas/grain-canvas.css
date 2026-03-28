@@ -132,6 +132,21 @@
   opacity: 1;
 }
 
+.grain-canvas-wrapper .tlui-toast {
+  max-width: min(420px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.grain-canvas-wrapper .tlui-toast__title,
+.grain-canvas-wrapper .tlui-toast__description,
+.grain-canvas-wrapper .tlui-toast [data-testid='toast-title'],
+.grain-canvas-wrapper .tlui-toast [data-testid='toast-description'] {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
 /* Page menu list — allow full height */
 .grain-canvas-wrapper .tlui-page-menu__list {
   overflow: visible !important;
@@ -199,6 +214,8 @@
   padding: 0;
   min-width: 48px;
   min-height: 48px;
+  cursor: pointer;
+  transition: transform 120ms ease;
 }
 
 .grain-canvas-wrapper .grain-organize-toolbar-button:hover,
@@ -219,6 +236,39 @@
   transform: translate(-50%, -50%);
   border-radius: 999px;
   background: var(--color-accent);
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 120ms ease;
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button:hover::before {
+  background: color-mix(in srgb, var(--color-accent) 90%, black 10%);
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button:active {
+  transform: translateY(1px);
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button:active::before {
+  transform: translate(-50%, -50%) scale(0.98);
+}
+
+.grain-canvas-wrapper .grain-organize-toolbar-button--loading::before {
+  background:
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--color-accent) 92%, black 8%) 0%,
+      color-mix(in srgb, var(--color-surface) 34%, var(--color-accent) 66%) 42%,
+      color-mix(in srgb, var(--color-surface) 72%, var(--color-accent) 28%) 50%,
+      color-mix(in srgb, var(--color-surface) 34%, var(--color-accent) 66%) 58%,
+      color-mix(in srgb, var(--color-accent) 92%, black 8%) 100%
+    );
+  background-size: 260% 100%;
+  animation: grain-button-shimmer 1.65s cubic-bezier(0.33, 0, 0.2, 1) infinite;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-surface) 18%, transparent),
+    0 0 22px color-mix(in srgb, var(--color-accent) 42%, transparent);
 }
 
 /* Suppress tldraw's default ::after hover on the organize button */
@@ -240,6 +290,65 @@
   z-index: 1;
 }
 
+.grain-canvas-wrapper .grain-organize-toolbar-button__badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--destructive);
+  box-shadow: 0 0 0 2px var(--color-surface);
+  z-index: 2;
+}
+
+.grain-canvas-wrapper .grain-board-processing-overlay {
+  position: fixed;
+  border-radius: calc(var(--radius-lg) + 2px);
+  border: 1.5px solid color-mix(in srgb, var(--color-accent) 42%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+  z-index: calc(var(--tl-layer-panels) + 1);
+  animation: grain-board-processing-pulse 2.8s ease-in-out infinite;
+  overflow: hidden;
+}
+
+.grain-canvas-wrapper .grain-board-processing-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-accent) 10%, transparent) 38%,
+    color-mix(in srgb, var(--color-accent) 18%, transparent) 50%,
+    color-mix(in srgb, var(--color-accent) 10%, transparent) 62%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: grain-board-processing-sweep 2.1s ease-in-out infinite;
+}
+
+.grain-canvas-wrapper .grain-board-processing-overlay__label {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  box-shadow: var(--shadow-toolbar);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+
 /* ── DNA panel — override tldraw's global user-select: none ── */
 .grain-dna-panel,
 .grain-dna-panel * {
@@ -256,4 +365,40 @@
 /* Sticky note override — use Grain surface color instead of tldraw yellow */
 .grain-canvas-wrapper .tl-note-container {
   --tl-note-color: var(--color-surface);
+}
+
+@keyframes grain-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes grain-button-shimmer {
+  0% {
+    background-position: 200% 50%;
+  }
+  100% {
+    background-position: -20% 50%;
+  }
+}
+
+@keyframes grain-board-processing-pulse {
+  0%, 100% {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  50% {
+    border-color: var(--color-accent);
+  }
+}
+
+@keyframes grain-board-processing-sweep {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }

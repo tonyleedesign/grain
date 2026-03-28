@@ -12,7 +12,7 @@ import { X, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-reac
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Medium, WebAppDNA, ImageGenDNA } from '@/types/dna'
-import { getBoardImageUrls } from '@/lib/getBoardImages'
+import { getBoardArtifactCount, getBoardImageUrls } from '@/lib/getBoardImages'
 import { useTheme } from '@/context/ThemeContext'
 import { buildThemeFromWebDna } from '@/lib/themeFromDna'
 import { MediumPicker } from './MediumPicker'
@@ -21,15 +21,29 @@ import { ExportView } from './ExportView'
 
 type PanelState = 'idle' | 'needs_medium' | 'extracting' | 'ready' | 'error'
 
+function getBoardLoadKey(boardName: string, boardId?: string, frameShapeId?: TLShapeId) {
+  return `${boardId || 'no-board-id'}::${frameShapeId || 'no-frame'}::${boardName}`
+}
+
 interface DNAPanelV2Props {
   boardName: string
   boardId?: string
   frameShapeId?: TLShapeId
   canvasId: string
+  isOpen: boolean
   onClose: () => void
+  onExtractionStateChange?: (isExtracting: boolean) => void
 }
 
-export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, canvasId, onClose }: DNAPanelV2Props) {
+export function DNAPanelV2({
+  boardName,
+  boardId: initialBoardId,
+  frameShapeId,
+  canvasId,
+  isOpen,
+  onClose,
+  onExtractionStateChange,
+}: DNAPanelV2Props) {
   const editor = useEditor()
   const { setTheme, resetTheme, isDefaultTheme } = useTheme()
   const [state, setState] = useState<PanelState>('idle')
@@ -38,6 +52,8 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
   const [useCase, setUseCase] = useState<string>('')
   const [dna, setDna] = useState<WebAppDNA | ImageGenDNA | null>(null)
   const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [analyzableVisualCount, setAnalyzableVisualCount] = useState(0)
+  const [artifactCount, setArtifactCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('designer')
   const [sourceContext, setSourceContext] = useState<string>('')
@@ -47,13 +63,52 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
   const [showRegenPrompt, setShowRegenPrompt] = useState(false)
   const [regenReason, setRegenReason] = useState('')
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
-  // Track which board we last loaded to avoid redundant fetches
-  const [loadedBoardName, setLoadedBoardName] = useState<string | null>(null)
+  // Track which board identity we last loaded to avoid redundant fetches
+  const [loadedBoardKey, setLoadedBoardKey] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  const syncResolvedBoard = useCallback(
+    (resolvedBoardId: string | null | undefined) => {
+      if (!resolvedBoardId) return
+
+      setBoardId((currentBoardId) => currentBoardId || resolvedBoardId)
+
+      if (!frameShapeId) return
+
+      const frame = editor.getShape(frameShapeId)
+      const currentBoardId = (frame?.meta as { boardId?: string } | undefined)?.boardId
+
+      if (frame?.type === 'frame' && currentBoardId !== resolvedBoardId) {
+        editor.updateShape({
+          id: frameShapeId,
+          type: 'frame',
+          meta: { ...(frame.meta || {}), boardId: resolvedBoardId },
+        })
+      }
+
+      fetch('/api/boards', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canvasId, boardId: resolvedBoardId, frameShapeId }),
+      }).catch(() => {})
+    },
+    [canvasId, editor, frameShapeId]
+  )
+
   useEffect(() => {
-    setPortalTarget(document.querySelector('.tlui-layout') as HTMLElement | null)
+    setBoardId(initialBoardId || null)
+  }, [initialBoardId])
+
+  useEffect(() => {
+    setPortalTarget(document.body)
   }, [])
+
+  useEffect(() => {
+    onExtractionStateChange?.(state === 'extracting')
+    return () => {
+      onExtractionStateChange?.(false)
+    }
+  }, [onExtractionStateChange, state])
 
   // Intercept clipboard and keyboard events at the native DOM level to prevent
   // tldraw's document-level listeners from capturing copy/paste inside the panel.
@@ -86,78 +141,134 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
   // Fetch board data when boardName changes to a DIFFERENT board
   useEffect(() => {
     // Same board — skip fetch, keep existing state
-    if (boardName === loadedBoardName) return
+    const boardLoadKey = getBoardLoadKey(boardName, initialBoardId, frameShapeId)
+    if (boardLoadKey === loadedBoardKey) return
 
     // Different board — reset and fetch
-    setLoadedBoardName(boardName)
+    setLoadedBoardKey(boardLoadKey)
+    setState('idle')
+    setBoardId(initialBoardId || null)
+    setMedium(null)
+    setUseCase('')
+    setDna(null)
+    setError(null)
+    setActiveTab('designer')
+    setSourceContext('')
+    setAppealContext('')
+    setObservations(null)
+    setFeedback(null)
+    setShowRegenPrompt(false)
+    setRegenReason('')
 
     // Get image URLs from the frame
     const urls = getBoardImageUrls(editor, { boardId: initialBoardId, frameId: frameShapeId, frameName: boardName })
+    const count = getBoardArtifactCount(editor, { boardId: initialBoardId, frameId: frameShapeId, frameName: boardName })
     setImageUrls(urls)
+    setAnalyzableVisualCount(urls.length)
+    setArtifactCount(count)
 
-    const params = new URLSearchParams({ canvasId })
-    if (initialBoardId) params.set('boardId', initialBoardId)
-    else {
+    const loadBoard = async () => {
+      let resolvedBoardId = initialBoardId || null
+
+      if (frameShapeId) {
+        try {
+          const repairResponse = await fetch('/api/boards/repair', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              canvasId,
+              boardId: resolvedBoardId,
+              frameShapeId,
+              frameName: boardName,
+            }),
+          })
+
+          if (repairResponse.ok) {
+            const repairData = (await repairResponse.json()) as { id?: string }
+            if (repairData.id) {
+              resolvedBoardId = repairData.id
+            }
+          }
+        } catch {}
+      }
+
+      const params = new URLSearchParams({ canvasId })
+      if (resolvedBoardId) params.set('boardId', resolvedBoardId)
       if (frameShapeId) params.set('frameShapeId', frameShapeId)
       params.set('name', boardName)
-    }
 
-    fetch(`/api/boards?${params.toString()}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Board not found')
-        return res.json()
-      })
-      .then((data) => {
-        setBoardId(data.id)
-        if (frameShapeId) {
-          const frame = editor.getShape(frameShapeId)
-          const currentBoardId = (frame?.meta as { boardId?: string } | undefined)?.boardId
-          if (frame?.type === 'frame' && currentBoardId !== data.id) {
-            editor.updateShape({
-              id: frameShapeId,
-              type: 'frame',
-              meta: { ...(frame.meta || {}), boardId: data.id },
-            })
+      fetch(`/api/boards?${params.toString()}`)
+        .then((res) => {
+          if (!res.ok) throw new Error('Board not found')
+          return res.json()
+        })
+        .then((data) => {
+          setBoardId(data.id)
+          if (frameShapeId) {
+            const frame = editor.getShape(frameShapeId)
+            const currentBoardId = (frame?.meta as { boardId?: string } | undefined)?.boardId
+            if (frame?.type === 'frame' && currentBoardId !== data.id) {
+              editor.updateShape({
+                id: frameShapeId,
+                type: 'frame',
+                meta: { ...(frame.meta || {}), boardId: data.id },
+              })
+            }
+
+            if (data.frame_shape_id !== frameShapeId) {
+              fetch('/api/boards', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ canvasId, boardId: data.id, frameShapeId }),
+              }).catch(() => {})
+            }
           }
 
-          if (data.frame_shape_id !== frameShapeId) {
+          if (data.name !== boardName) {
             fetch('/api/boards', {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ canvasId, boardId: data.id, frameShapeId }),
+              body: JSON.stringify({ canvasId, boardId: data.id, newName: boardName }),
             }).catch(() => {})
           }
-        }
-        if (data.needs_extraction) {
-          setState('needs_medium')
-        } else {
-          setMedium(data.medium)
-          setUseCase(data.use_case || '')
-          setSourceContext(data.source_context || '')
-          setAppealContext(data.appeal_context || '')
-          setDna(data.dna_data)
-          setObservations(data.observations || null)
-          setState('ready')
-        }
 
-        // Fetch feedback now that we have the board ID
-        if (data.id) {
-          fetch(`/api/dna-feedback?boardId=${data.id}`)
-            .then((res) => res.json())
-            .then((fb) => {
-              if (fb?.what_was_off) setFeedback(fb.what_was_off)
-            })
-            .catch(() => {})
-        }
-      })
-      .catch(() => {
-        setState('needs_medium')
-      })
-  }, [boardName, canvasId, editor, frameShapeId, initialBoardId, loadedBoardName])
+          if (data.needs_extraction) {
+            setState('needs_medium')
+          } else {
+            setMedium(data.medium)
+            setUseCase(data.use_case || '')
+            setSourceContext(data.source_context || '')
+            setAppealContext(data.appeal_context || '')
+            setDna(data.dna_data)
+            setObservations(data.observations || null)
+            setState('ready')
+          }
+
+          if (data.id) {
+            fetch(`/api/dna-feedback?boardId=${data.id}`)
+              .then((res) => res.json())
+              .then((fb) => {
+                if (fb?.what_was_off) setFeedback(fb.what_was_off)
+              })
+              .catch(() => {})
+          }
+        })
+        .catch(() => {
+          setState('needs_medium')
+        })
+    }
+
+    void loadBoard()
+  }, [boardName, canvasId, editor, frameShapeId, initialBoardId, loadedBoardKey])
 
   const extractDNA = useCallback(
     async (selectedMedium: Medium, selectedUseCase: string, selectedSourceContext?: string, selectedAppealContext?: string) => {
-      if (!boardName || imageUrls.length === 0) return
+      if (!boardName) return
+      if (imageUrls.length === 0) {
+        setError('This board has no analyzable visuals yet. Add images, or use links with preview images.')
+        setState('error')
+        return
+      }
 
       setState('extracting')
       setMedium(selectedMedium)
@@ -174,6 +285,7 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
             boardId,
             boardName,
             canvasId,
+            frameShapeId,
             medium: selectedMedium,
             useCase: selectedUseCase || undefined,
             sourceContext: selectedSourceContext || undefined,
@@ -189,7 +301,12 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
           throw new Error(err.error || 'Extraction failed')
         }
 
-        const result = await response.json()
+        const result = await response.json() as {
+          boardId?: string
+          dna: WebAppDNA | ImageGenDNA
+          observations?: string | null
+        }
+        syncResolvedBoard(result.boardId)
         setDna(result.dna)
         setObservations(result.observations || null)
         setState('ready')
@@ -198,11 +315,16 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
         setState('error')
       }
     },
-    [boardId, boardName, canvasId, imageUrls, feedback]
+    [boardId, boardName, canvasId, frameShapeId, imageUrls, feedback, syncResolvedBoard]
   )
 
   const handleRegenerate = useCallback((reason?: string) => {
-    if (!medium || !boardName || imageUrls.length === 0) return
+    if (!medium || !boardName) return
+    if (imageUrls.length === 0) {
+      setError('This board has no analyzable visuals yet. Add images, or use links with preview images.')
+      setState('error')
+      return
+    }
 
     // Pass feedback directly into the extraction request instead of relying on state
     setShowRegenPrompt(false)
@@ -219,6 +341,7 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
         boardId,
         boardName,
         canvasId,
+        frameShapeId,
         medium,
         useCase: useCase || undefined,
         sourceContext: sourceContext || undefined,
@@ -234,7 +357,8 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
         if (!res.ok) return res.json().then((err) => { throw new Error(err.error || 'Extraction failed') })
         return res.json()
       })
-      .then((result) => {
+      .then((result: { boardId?: string; dna: WebAppDNA | ImageGenDNA; observations?: string | null }) => {
+        syncResolvedBoard(result.boardId)
         setDna(result.dna)
         setObservations(result.observations || null)
         if (reason) setFeedback(reason)
@@ -244,7 +368,7 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
         setError(err instanceof Error ? err.message : 'Extraction failed')
         setState('error')
       })
-  }, [boardId, medium, boardName, canvasId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna])
+  }, [boardId, medium, boardName, canvasId, frameShapeId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna, syncResolvedBoard])
 
   const handleDetach = useCallback(() => {
     if (!dna || !medium || !boardName) return
@@ -292,21 +416,27 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
     <motion.div
       ref={panelRef}
       key="dna-panel"
-      initial={{ x: '100%' }}
-      animate={{ x: 0 }}
-      exit={{ x: '100%' }}
+      initial={false}
+      animate={{
+        x: isOpen ? 0 : '100%',
+        opacity: isOpen ? 1 : 0.96,
+      }}
       transition={{ type: 'tween', duration: 0.2, ease: 'easeInOut' }}
       className="grain-dna-panel fixed top-0 right-0 w-1/3 min-w-80 h-screen flex flex-col"
       style={{
-        zIndex: 'var(--tl-layer-panels)',
-        pointerEvents: 'all',
+        // Mount outside tldraw's strict layout stacking context so the panel
+        // can reliably sit above contextual toolbars and other canvas chrome.
+        zIndex: 1201,
+        pointerEvents: isOpen ? 'all' : 'none',
         touchAction: 'auto',
         backgroundColor: 'var(--color-surface)',
         boxShadow: 'var(--shadow-panel)',
         borderRadius: 'var(--radius-lg) 0 0 var(--radius-lg)',
         fontFamily: 'var(--font-family)',
         color: 'var(--color-text)',
+        visibility: isOpen ? 'visible' : 'hidden',
       }}
+      aria-hidden={!isOpen}
       // Prevent pointer events from reaching tldraw canvas
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
@@ -356,7 +486,8 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
         {state === 'needs_medium' && (
           <MediumPicker
             onSubmit={extractDNA}
-            imageCount={imageUrls.length}
+            artifactCount={artifactCount}
+            analyzableVisualCount={analyzableVisualCount}
           />
         )}
 
@@ -368,7 +499,7 @@ export function DNAPanelV2({ boardName, boardId: initialBoardId, frameShapeId, c
                 Extracting Design DNA...
               </p>
               <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                Observing {imageUrls.length} image{imageUrls.length !== 1 ? 's' : ''}, then synthesizing DNA.
+                Observing {imageUrls.length} visual reference{imageUrls.length !== 1 ? 's' : ''}, then synthesizing DNA.
                 This usually takes 20-30 seconds.
               </p>
             </div>

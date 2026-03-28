@@ -12,17 +12,22 @@ import {
   useEditor,
   useValue,
   TLImageShape,
+  useToasts,
 } from 'tldraw'
 import { useCallback, useState } from 'react'
 import { AISparkleIcon } from './AISparkleIcon'
+import { GroupBoardIcon } from './GroupBoardIcon'
+import { groupShapesIntoBoard } from '@/lib/board-grouping'
 
 interface GrainImageToolbarInnerProps {
+  canvasId: string
   onAskAI: () => void
   imageShapeId: TLImageShape['id']
 }
 
-function GrainImageToolbarInner({ onAskAI, imageShapeId }: GrainImageToolbarInnerProps) {
+function GrainImageToolbarInner({ canvasId, onAskAI, imageShapeId }: GrainImageToolbarInnerProps) {
   const editor = useEditor()
+  const { addToast } = useToasts()
   const isInCropTool = useValue('editor path', () => editor.isIn('select.crop.'), [editor])
 
   const handleManipulatingEnd = useCallback(() => {
@@ -36,6 +41,28 @@ function GrainImageToolbarInner({ onAskAI, imageShapeId }: GrainImageToolbarInne
   )
 
   const [isEditingAltText, setIsEditingAltText] = useState(false)
+
+  const handleGroupAsBoard = useCallback(async () => {
+    const image = editor.getShape(imageShapeId)
+    if (!image) return
+
+    try {
+      const result = await groupShapesIntoBoard(editor, canvasId, [image])
+      if (!result) return
+
+      addToast({
+        title: 'Board created',
+        description: `Grouped ${result.count} item into ${result.boardName}.`,
+        severity: 'success',
+      })
+    } catch (error) {
+      addToast({
+        title: 'Grouping failed',
+        description: error instanceof Error ? error.message : 'Failed to create board.',
+        severity: 'error',
+      })
+    }
+  }, [addToast, canvasId, editor, imageShapeId])
 
   // When in crop mode or editing alt text, don't show the AI button
   if (isInCropTool || isEditingAltText) {
@@ -61,6 +88,18 @@ function GrainImageToolbarInner({ onAskAI, imageShapeId }: GrainImageToolbarInne
       />
       <TldrawUiToolbarButton
         type="icon"
+        title="Group as board"
+        onClick={() => {
+          void handleGroupAsBoard()
+        }}
+      >
+        <TldrawUiButtonIcon
+          small
+          icon={<GroupBoardIcon size={13} />}
+        />
+      </TldrawUiToolbarButton>
+      <TldrawUiToolbarButton
+        type="icon"
         title="Ask AI"
         onClick={onAskAI}
         style={{ borderLeft: '1px solid var(--tl-color-divider)', marginLeft: '2px' }}
@@ -78,7 +117,7 @@ function GrainImageToolbarInner({ onAskAI, imageShapeId }: GrainImageToolbarInne
  * Creates a GrainImageToolbar component factory.
  * The returned component is used as the `ImageToolbar` override in TLComponents.
  */
-export function createGrainImageToolbar(onAskAI: () => void) {
+export function createGrainImageToolbar(onAskAI: () => void, canvasId: string) {
   return function GrainImageToolbar() {
     const editor = useEditor()
     const imageShapeId = useValue(
@@ -95,7 +134,7 @@ export function createGrainImageToolbar(onAskAI: () => void) {
 
     return (
       <DefaultImageToolbar>
-        <GrainImageToolbarInner onAskAI={onAskAI} imageShapeId={imageShapeId} />
+        <GrainImageToolbarInner canvasId={canvasId} onAskAI={onAskAI} imageShapeId={imageShapeId} />
       </DefaultImageToolbar>
     )
   }
