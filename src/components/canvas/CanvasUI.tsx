@@ -19,6 +19,7 @@ import {
   hasLiveBoardFrame,
 } from '@/lib/board-identity'
 import { applyPendingCaptures } from '@/lib/capture-placement'
+import { supabase } from '@/lib/supabase'
 import type { PendingCapture } from '@/types/captures'
 
 interface ActiveBoard {
@@ -268,6 +269,17 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     const FAST_POLL_MS = 1500
     const IDLE_POLL_MS = 4000
 
+    const getAuthHeaders = async () => {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token ?? accessToken
+
+      if (!token) return null
+
+      return {
+        Authorization: `Bearer ${token}`,
+      }
+    }
+
     const clearScheduledPoll = () => {
       if (capturePollTimeoutRef.current) {
         window.clearTimeout(capturePollTimeoutRef.current)
@@ -293,12 +305,23 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       let nextPollDelay = IDLE_POLL_MS
 
       try {
-        const response = await fetch(`/api/send-to-grain/pending?canvasId=${canvasId}`, {
+        let authHeaders = await getAuthHeaders()
+        if (!authHeaders) return
+
+        let response = await fetch(`/api/send-to-grain/pending?canvasId=${canvasId}`, {
           cache: 'no-store',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: authHeaders,
         })
+
+        if (response.status === 401) {
+          authHeaders = await getAuthHeaders()
+          if (!authHeaders) return
+
+          response = await fetch(`/api/send-to-grain/pending?canvasId=${canvasId}`, {
+            cache: 'no-store',
+            headers: authHeaders,
+          })
+        }
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => '')
@@ -323,11 +346,14 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         nextPollDelay = FAST_POLL_MS
         if (!appliedIds.length || cancelled) return
 
+        const authHeadersForMark = await getAuthHeaders()
+        if (!authHeadersForMark) return
+
         const markAppliedResponse = await fetch('/api/send-to-grain/pending', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
+            ...authHeadersForMark,
           },
           body: JSON.stringify({
             canvasId,

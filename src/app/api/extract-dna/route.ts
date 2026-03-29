@@ -43,8 +43,8 @@ async function runObservation(
   ]
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 2048,
     system: [
       {
         type: 'text',
@@ -93,7 +93,7 @@ async function runSynthesis(
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 6144,
+    max_tokens: 4096,
     system: [
       {
         type: 'text',
