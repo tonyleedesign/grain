@@ -6,6 +6,7 @@ import { Inbox, Sparkles, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ArtifactMosaic, SelectableReviewCard, toTitleCase } from './ReviewArtifacts'
 import type { HoldingCellArtifact, HoldingCellBoardProposal, HoldingCellMode } from '@/types/holding-cell'
+import { useIsNarrowViewport } from './useIsNarrowViewport'
 
 interface HoldingCellModalProps {
   open: boolean
@@ -54,7 +55,7 @@ function CaptureCard({
       subtitle={`${artifact.sourceChannel === 'telegram' ? 'Telegram' : 'Send to Grain'}${artifact.siteName ? ` / ${artifact.siteName}` : ''}`}
       mosaic={<ArtifactMosaic artifacts={[artifact]} maxArtifacts={1} />}
       badgeLabel={isNew ? 'New' : undefined}
-      footerAction={
+      floatingAction={
         <Button
           type="button"
           onClick={(event) => {
@@ -112,9 +113,11 @@ export function HoldingCellModal({
   footerNotice = null,
   footerSecondaryLink = null,
 }: HoldingCellModalProps) {
+  const isMobile = useIsNarrowViewport()
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const newCaptureIdSet = useMemo(() => new Set(newCaptureIds), [newCaptureIds])
   const canGroup = mode === 'review' && selectedIds.length >= 2
+  const hasFooterCenterContent = Boolean(footerNotice || footerSecondaryLink)
   const reviewCards = mode === 'group-review'
     ? [
         ...groupedBoards.map((board) => ({ id: `board:${board.id}`, type: 'board' as const, board })),
@@ -133,17 +136,18 @@ export function HoldingCellModal({
         backgroundColor: 'color-mix(in srgb, var(--color-text) 42%, transparent)',
         backdropFilter: 'blur(4px)',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'center',
-        padding: 24,
+        padding: isMobile ? 0 : 24,
       }}
       onClick={onClose}
     >
       <div
         style={{
-          width: 'min(980px, calc(100vw - 48px))',
-          maxHeight: 'min(84vh, 920px)',
-          borderRadius: 'var(--radius-xl)',
+          width: isMobile ? '100vw' : 'min(980px, calc(100vw - 48px))',
+          maxHeight: isMobile ? '100vh' : 'min(84vh, 920px)',
+          height: isMobile ? '100vh' : 'auto',
+          borderRadius: isMobile ? 0 : 'var(--radius-xl)',
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-panel)',
@@ -158,7 +162,9 @@ export function HoldingCellModal({
             display: 'flex',
             flexDirection: 'column',
             gap: 20,
-            padding: 24,
+            padding: isMobile ? 16 : 24,
+            flex: 1,
+            minHeight: 0,
             overflow: 'auto',
           }}
         >
@@ -195,8 +201,16 @@ export function HoldingCellModal({
             </Button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              alignItems: isMobile ? 'stretch' : 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+            }}
+          >
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Button
                 onClick={() => onSelectionChange(reviewCards.map((item) => item.id))}
                 variant="outline"
@@ -214,7 +228,7 @@ export function HoldingCellModal({
                 Clear all
               </Button>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--color-muted)' }}>
+            <div style={{ fontSize: 12, color: 'var(--color-muted)', alignSelf: isMobile ? 'flex-start' : 'auto' }}>
               {selectedIds.length} of {reviewCards.length} selected
             </div>
           </div>
@@ -222,7 +236,7 @@ export function HoldingCellModal({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))',
               gap: 16,
             }}
           >
@@ -263,17 +277,25 @@ export function HoldingCellModal({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr auto 1fr',
-            alignItems: 'center',
+            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr auto 1fr',
+            alignItems: isMobile ? 'stretch' : 'center',
             columnGap: 16,
-            padding: '16px 24px 24px',
+            rowGap: isMobile ? 12 : 0,
+            padding: isMobile ? '16px' : '16px 24px 24px',
             borderTop: '1px solid var(--color-border)',
             backgroundColor: 'var(--color-surface)',
-            position: 'sticky',
-            bottom: 0,
+            flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifySelf: 'start' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              justifySelf: isMobile ? 'stretch' : 'start',
+              order: isMobile ? 4 : 1,
+            }}
+          >
             {mode === 'group-review' ? (
               <Button
                 onClick={onRejectPlan}
@@ -290,6 +312,7 @@ export function HoldingCellModal({
                 variant="outline"
                 size="lg"
                 className="rounded-full bg-[var(--color-bg)]"
+                style={{ width: isMobile ? '100%' : undefined }}
               >
                 {isGrouping ? (
                   <>
@@ -306,11 +329,22 @@ export function HoldingCellModal({
             )}
           </div>
 
-          <div style={{ justifySelf: 'center', minHeight: 28, display: 'flex', alignItems: 'center' }}>
+          <div
+            style={{
+              justifySelf: isMobile ? 'stretch' : 'center',
+              minHeight: hasFooterCenterContent ? 28 : 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isMobile ? 'flex-start' : 'center',
+              order: isMobile ? 1 : 2,
+              visibility: hasFooterCenterContent ? 'visible' : 'hidden',
+            }}
+          >
             {footerNotice ? (
               <div
                 style={{
                   display: 'inline-flex',
+                  flexWrap: 'wrap',
                   alignItems: 'center',
                   gap: 8,
                   fontSize: 12,
@@ -342,12 +376,22 @@ export function HoldingCellModal({
             ) : null}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifySelf: 'end' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: 10,
+              justifySelf: isMobile ? 'stretch' : 'end',
+              order: isMobile ? 2 : 3,
+            }}
+          >
             <Button
               onClick={onClose}
               variant="outline"
               size="lg"
               className="rounded-full bg-[var(--color-bg)]"
+              style={{ order: isMobile ? 2 : 1 }}
             >
               Close
             </Button>
@@ -356,6 +400,7 @@ export function HoldingCellModal({
               disabled={selectedIds.length === 0}
               size="lg"
               className="rounded-full bg-[var(--color-accent)] text-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-accent)_88%,black_12%)]"
+              style={{ order: isMobile ? 1 : 2 }}
             >
               Place selected
             </Button>

@@ -86,10 +86,10 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const [isGroupingHolding, setIsGroupingHolding] = useState(false)
   const [draftHydrated, setDraftHydrated] = useState(false)
   const [seenCaptureIds, setSeenCaptureIds] = useState<string[]>([])
-  const [unseenPendingCaptureIds, setUnseenPendingCaptureIds] = useState<string[]>([])
+  const [newCapturesForReviewIds, setNewCapturesForReviewIds] = useState<string[]>([])
   const [sessionNewCaptureIds, setSessionNewCaptureIds] = useState<string[]>([])
   const [holdingDismissedThisSession, setHoldingDismissedThisSession] = useState(false)
-  const [footerNoticeCaptureIds, setFooterNoticeCaptureIds] = useState<string[]>([])
+  const [organizeReviewOpen, setOrganizeReviewOpen] = useState(false)
   const [placementPlan, setPlacementPlan] = useState<PlacementPlan | null>(null)
   const [placementSource, setPlacementSource] = useState<'holding-cell' | 'organize' | null>(null)
   const [organizePlacementBoards, setOrganizePlacementBoards] = useState<OrganizePlanBoardPreview[]>([])
@@ -109,6 +109,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const holdingSelectedIdsRef = useRef(holdingSelectedIds)
   const holdingSelectionClearedByUserRef = useRef(holdingSelectionClearedByUser)
   const seenCaptureIdsRef = useRef(seenCaptureIds)
+  const newCapturesForReviewIdsRef = useRef(newCapturesForReviewIds)
   const holdingDismissedThisSessionRef = useRef(holdingDismissedThisSession)
 
   const boardToRender = activeBoard?.boardName || lastBoardName
@@ -137,11 +138,12 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         onClick: () => {
           setHoldingOpen(true)
           setHoldingDismissedThisSession(false)
-          setSessionNewCaptureIds(unseenPendingCaptureIds)
-          setUnseenPendingCaptureIds([])
-          setFooterNoticeCaptureIds([])
+          if (!(holdingModeRef.current === 'group-review' && (groupedBoardsRef.current.length > 0 || groupReviewCaptureIdsRef.current.length > 0))) {
+            setSessionNewCaptureIds(newCapturesForReviewIdsRef.current)
+            setNewCapturesForReviewIds([])
+          }
         },
-        highlight: unseenPendingCaptureIds.length > 0,
+        highlight: newCapturesForReviewIds.length > 0,
       })
     }
 
@@ -154,7 +156,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     }
 
     return items
-  }, [isDefaultTheme, organizeStatus.active, organizeStatus.label, pendingCaptures.length, placementPlan, resetTheme, unseenPendingCaptureIds])
+  }, [isDefaultTheme, organizeStatus.active, organizeStatus.label, pendingCaptures.length, placementPlan, resetTheme, newCapturesForReviewIds])
 
   const getAuthHeaders = useCallback(async () => {
     const { data } = await supabase.auth.getSession()
@@ -213,9 +215,8 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         .filter((board) => board.artifacts.length > 0)
     )
     setGroupedSnapshotSelectedIds((current) => current.filter((id) => id !== captureId))
-    setUnseenPendingCaptureIds((current) => current.filter((id) => id !== captureId))
+    setNewCapturesForReviewIds((current) => current.filter((id) => id !== captureId))
     setSessionNewCaptureIds((current) => current.filter((id) => id !== captureId))
-    setFooterNoticeCaptureIds((current) => current.filter((id) => id !== captureId))
     setSeenCaptureIds((current) => current.filter((id) => id !== captureId))
   }, [canvasId, getAuthHeaders])
 
@@ -279,6 +280,10 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   }, [seenCaptureIds])
 
   useEffect(() => {
+    newCapturesForReviewIdsRef.current = newCapturesForReviewIds
+  }, [newCapturesForReviewIds])
+
+  useEffect(() => {
     holdingDismissedThisSessionRef.current = holdingDismissedThisSession
   }, [holdingDismissedThisSession])
 
@@ -292,7 +297,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     setGroupedBoards([])
     setGroupReviewCaptureIds([])
     setGroupedSnapshotSelectedIds([])
-    setFooterNoticeCaptureIds([])
+    setNewCapturesForReviewIds([])
     setHoldingMode('review')
     setHoldingSelectedIds(pendingCaptures.map((capture) => capture.id))
     setHoldingSelectionClearedByUser(false)
@@ -383,7 +388,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     setPlacementOverlapFrameId(null)
     setPlacementPendingAnchor(null)
     setPlacementError(null)
-    setFooterNoticeCaptureIds((current) => current.filter((id) => !appliedIds.has(id)))
+    setNewCapturesForReviewIds((current) => current.filter((id) => !appliedIds.has(id)))
     setHoldingMode(nextGroupedBoards.length > 0 || nextGroupReviewCaptureIds.length > 0 ? 'group-review' : 'review')
   }, [canvasId, editor, groupReviewCaptureIds, groupedBoards, groupedSnapshotSelectedIds, markCapturesApplied, organizePlacementBoards, placementPlan, placementSource])
 
@@ -409,6 +414,16 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
 
     window.addEventListener('grain:organize-status', handleOrganizeStatus)
     return () => window.removeEventListener('grain:organize-status', handleOrganizeStatus)
+  }, [])
+
+  useEffect(() => {
+    const handleOrganizeReviewOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ open?: boolean }>).detail || {}
+      setOrganizeReviewOpen(Boolean(detail.open))
+    }
+
+    window.addEventListener('grain:organize-review-open', handleOrganizeReviewOpen)
+    return () => window.removeEventListener('grain:organize-review-open', handleOrganizeReviewOpen)
   }, [])
 
   useEffect(() => {
@@ -735,18 +750,13 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
             const isGroupedReviewOpen = holdingOpen && holdingModeRef.current === 'group-review'
 
             if (isGroupedReviewOpen) {
-              setFooterNoticeCaptureIds((current) => Array.from(new Set([...current, ...unseenIds])))
-              setUnseenPendingCaptureIds([])
+              setNewCapturesForReviewIds((current) => Array.from(new Set([...current, ...unseenIds])))
             } else if (holdingDismissedThisSessionRef.current) {
-              setUnseenPendingCaptureIds((current) => Array.from(new Set([...current, ...unseenIds])))
-              if (holdingModeRef.current === 'group-review') {
-                setFooterNoticeCaptureIds((current) => Array.from(new Set([...current, ...unseenIds])))
-              }
+              setNewCapturesForReviewIds((current) => Array.from(new Set([...current, ...unseenIds])))
             } else {
               setHoldingOpen(true)
               setSessionNewCaptureIds(unseenIds)
-              setUnseenPendingCaptureIds([])
-              setFooterNoticeCaptureIds([])
+              setNewCapturesForReviewIds([])
               if (holdingModeRef.current !== 'group-review') {
                 setHoldingMode('review')
                 setHoldingSelectedIds(captureIds)
@@ -769,8 +779,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
           setGroupReviewCaptureIds([])
           setGroupedSnapshotSelectedIds([])
           setSessionNewCaptureIds([])
-          setUnseenPendingCaptureIds([])
-          setFooterNoticeCaptureIds([])
+          setNewCapturesForReviewIds([])
           setHoldingOpen(false)
           if (holdingModeRef.current !== 'placement') {
             setHoldingMode('review')
@@ -857,7 +866,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       setGroupedSnapshotSelectedIds(nextSelectedIds)
       setHoldingSelectedIds(nextSelectedIds)
       setHoldingSelectionClearedByUser(false)
-      setFooterNoticeCaptureIds([])
+      setNewCapturesForReviewIds([])
     } finally {
       setIsGroupingHolding(false)
     }
@@ -932,9 +941,9 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     [groupedBoards]
   )
   const groupReviewCaptureIdSet = useMemo(() => new Set(groupReviewCaptureIds), [groupReviewCaptureIds])
-  const footerNoticeText = footerNoticeCaptureIds.length === 1
+  const footerNoticeText = newCapturesForReviewIds.length === 1
     ? '1 new capture available'
-    : `${footerNoticeCaptureIds.length} new captures available`
+    : `${newCapturesForReviewIds.length} new captures available`
   const hasGroupedSnapshot = groupedBoards.length > 0 || groupReviewCaptureIds.length > 0
 
   return (
@@ -951,7 +960,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         onVisibilityChange={setAiBarVisible}
       />
 
-      {clusterItems.length > 0 && clusterAnchor ? (
+      {clusterItems.length > 0 && clusterAnchor && !holdingOpen && !organizeReviewOpen ? (
         <PillCluster anchor={clusterAnchor} items={clusterItems} />
       ) : null}
 
@@ -991,16 +1000,15 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         onGroup={handleGroupPendingCaptures}
         onRejectPlan={handleRejectHoldingPlan}
         onPlaceSelected={handleBeginPlacement}
-        footerNotice={holdingMode === 'group-review' && footerNoticeCaptureIds.length > 0 ? {
+        footerNotice={holdingMode === 'group-review' && newCapturesForReviewIds.length > 0 ? {
           text: footerNoticeText,
           ctaLabel: 'Review them',
           onClick: () => {
             setGroupedSnapshotSelectedIds(holdingSelectedIds)
             setHoldingMode('review')
             setHoldingSelectedIds(pendingCaptures.map((capture) => capture.id))
-            setSessionNewCaptureIds(footerNoticeCaptureIds)
-            setFooterNoticeCaptureIds([])
-            setUnseenPendingCaptureIds([])
+            setSessionNewCaptureIds(newCapturesForReviewIds)
+            setNewCapturesForReviewIds([])
           },
           animate: true,
         } : null}

@@ -115,7 +115,7 @@ export function SelectableReviewCard({
   reason,
   mosaic,
   badgeLabel,
-  footerAction,
+  floatingAction,
 }: {
   checked: boolean
   onToggle: (checked: boolean) => void
@@ -124,11 +124,12 @@ export function SelectableReviewCard({
   reason?: ReactNode
   mosaic: ReactNode
   badgeLabel?: string
-  footerAction?: ReactNode
+  floatingAction?: ReactNode
 }) {
   return (
     <label
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
@@ -153,7 +154,17 @@ export function SelectableReviewCard({
                 {badgeLabel}
               </Badge>
             ) : null}
-            <span>{title}</span>
+            <span
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                verticalAlign: 'top',
+              }}
+            >
+              {title}
+            </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-muted)' }}>{subtitle}</div>
         </div>
@@ -173,22 +184,19 @@ export function SelectableReviewCard({
 
       {mosaic}
 
-      {(reason || footerAction) ? (
+      {reason ? (
+        <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--color-muted)' }}>{reason}</div>
+      ) : null}
+
+      {floatingAction ? (
         <div
           style={{
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            gap: 12,
-            minHeight: 28,
+            position: 'absolute',
+            right: 12,
+            bottom: 12,
           }}
         >
-          {reason ? (
-            <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--color-muted)', flex: 1 }}>{reason}</div>
-          ) : (
-            <div />
-          )}
-          {footerAction ? <div style={{ flexShrink: 0 }}>{footerAction}</div> : null}
+          {floatingAction}
         </div>
       ) : null}
     </label>

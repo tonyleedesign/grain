@@ -279,6 +279,22 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
     }
   }, [isOrganizing])
 
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('grain:organize-review-open', {
+        detail: { open: reviewOpen },
+      })
+    )
+
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent('grain:organize-review-open', {
+          detail: { open: false },
+        })
+      )
+    }
+  }, [reviewOpen])
+
   return (
     <>
       <TldrawUiToolbarButton

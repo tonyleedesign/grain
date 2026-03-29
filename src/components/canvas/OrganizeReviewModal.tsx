@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import type { OrganizeArtifactPreview, OrganizePlanBoardPreview } from '@/types/organize'
 import { Button } from '@/components/ui/button'
 import { ArtifactMosaic, SelectableReviewCard, toTitleCase } from './ReviewArtifacts'
+import { useIsNarrowViewport } from './useIsNarrowViewport'
 
 interface OrganizeReviewModalProps {
   open: boolean
@@ -49,6 +50,7 @@ export function OrganizeReviewModal({
   onReject,
   onClose,
 }: OrganizeReviewModalProps) {
+  const isMobile = useIsNarrowViewport()
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
   if (!open) return null
@@ -64,17 +66,18 @@ export function OrganizeReviewModal({
         backgroundColor: 'color-mix(in srgb, var(--color-text) 42%, transparent)',
         backdropFilter: 'blur(4px)',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'center',
-        padding: 24,
+        padding: isMobile ? 0 : 24,
       }}
       onClick={onClose}
     >
       <div
         style={{
-          width: 'min(980px, calc(100vw - 48px))',
-          maxHeight: 'min(84vh, 920px)',
-          borderRadius: 'var(--radius-xl)',
+          width: isMobile ? '100vw' : 'min(980px, calc(100vw - 48px))',
+          maxHeight: isMobile ? '100vh' : 'min(84vh, 920px)',
+          height: isMobile ? '100vh' : 'auto',
+          borderRadius: isMobile ? 0 : 'var(--radius-xl)',
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-panel)',
@@ -89,7 +92,9 @@ export function OrganizeReviewModal({
             display: 'flex',
             flexDirection: 'column',
             gap: 20,
-            padding: 24,
+            padding: isMobile ? 16 : 24,
+            flex: 1,
+            minHeight: 0,
             overflow: 'auto',
           }}
         >
@@ -113,8 +118,16 @@ export function OrganizeReviewModal({
           </Button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'stretch' : 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button
               onClick={() => onSelectionChange(proposals.map((proposal) => proposal.id))}
               variant="outline"
@@ -132,7 +145,7 @@ export function OrganizeReviewModal({
               Clear all
             </Button>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--color-muted)' }}>
+          <div style={{ fontSize: 12, color: 'var(--color-muted)', alignSelf: isMobile ? 'flex-start' : 'auto' }}>
             {selectedIds.length} of {proposals.length} selected
           </div>
         </div>
@@ -140,7 +153,7 @@ export function OrganizeReviewModal({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))',
             gap: 16,
           }}
         >
@@ -166,15 +179,15 @@ export function OrganizeReviewModal({
 
         <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: 10,
-            padding: '16px 24px 24px',
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr auto',
+            alignItems: isMobile ? 'stretch' : 'center',
+            columnGap: 16,
+            rowGap: isMobile ? 12 : 0,
+            padding: isMobile ? '16px' : '16px 24px 24px',
             borderTop: '1px solid var(--color-border)',
             backgroundColor: 'var(--color-surface)',
-            position: 'sticky',
-            bottom: 0,
+            flexShrink: 0,
           }}
         >
           <Button
@@ -182,27 +195,44 @@ export function OrganizeReviewModal({
             disabled={isApplying}
             variant="link"
             size="sm"
-            className="mr-auto px-0 text-[var(--destructive)] hover:text-[color-mix(in_srgb,var(--destructive)_88%,black_12%)]"
+            className="px-0 text-[var(--destructive)] hover:text-[color-mix(in_srgb,var(--destructive)_88%,black_12%)]"
+            style={{
+              justifySelf: isMobile ? 'stretch' : 'start',
+              order: isMobile ? 3 : 1,
+            }}
           >
             Reject this plan
           </Button>
-          <Button
-            onClick={onClose}
-            disabled={isApplying}
-            variant="outline"
-            size="lg"
-            className="rounded-full bg-[var(--color-bg)]"
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: 10,
+              justifySelf: isMobile ? 'stretch' : 'end',
+              order: isMobile ? 2 : 2,
+            }}
           >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onApply(selectedIds)}
-            disabled={isApplying || selectedIds.length === 0}
-            size="lg"
-            className="rounded-full bg-[var(--color-accent)] text-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-accent)_88%,black_12%)]"
-          >
-            {isApplying ? 'Creating boards...' : 'Create selected boards'}
-          </Button>
+            <Button
+              onClick={onClose}
+              disabled={isApplying}
+              variant="outline"
+              size="lg"
+              className="rounded-full bg-[var(--color-bg)]"
+              style={{ order: isMobile ? 2 : 1 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => onApply(selectedIds)}
+              disabled={isApplying || selectedIds.length === 0}
+              size="lg"
+              className="rounded-full bg-[var(--color-accent)] text-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-accent)_88%,black_12%)]"
+              style={{ order: isMobile ? 1 : 2 }}
+            >
+              {isApplying ? 'Creating boards...' : 'Create selected boards'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
