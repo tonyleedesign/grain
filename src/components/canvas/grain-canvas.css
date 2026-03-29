@@ -402,3 +402,45 @@
     background-position: -200% 0;
   }
 }
+
+@keyframes grain-pending-pill-shimmer {
+  0% {
+    background-image: linear-gradient(
+      110deg,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 0%,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 40%,
+      color-mix(in srgb, var(--color-accent) 18%, var(--color-bg)) 52%,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 64%,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 100%
+    );
+    background-size: 220% 100%;
+    background-position: 180% 50%;
+  }
+  100% {
+    background-image: linear-gradient(
+      110deg,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 0%,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 40%,
+      color-mix(in srgb, var(--color-accent) 18%, var(--color-bg)) 52%,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 64%,
+      color-mix(in srgb, var(--color-bg) 92%, transparent) 100%
+    );
+    background-size: 220% 100%;
+    background-position: -40% 50%;
+  }
+}
+
+@keyframes grain-holding-footer-notice-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  68% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

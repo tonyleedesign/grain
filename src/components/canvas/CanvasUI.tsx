@@ -1,15 +1,14 @@
 'use client'
 
-// Canvas UI layer — lives inside <Tldraw> context.
-// Manages DNA panel visibility based on frame selection.
-// Reference: grain-prd.md Section 11.3
-
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useEditor, useValue, TLShapeId } from 'tldraw'
-import { RotateCcw } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { useEditor, useValue, TLFrameShape, TLPageId, TLShapeId } from 'tldraw'
+import { Inbox, RotateCcw, Sparkles, X } from 'lucide-react'
 import { AIActionBar } from './AIActionBar'
 import { GrainSelectionToolbar } from './GrainSelectionToolbar'
 import { DNAPanelV2 } from '../dna/DNAPanelV2'
+import { HoldingCellModal } from './HoldingCellModal'
+import { Button } from '@/components/ui/button'
 import { useTheme } from '@/context/ThemeContext'
 import {
   applyBoardLinkToShape,
@@ -18,9 +17,23 @@ import {
   getBoardIdFromMeta,
   hasLiveBoardFrame,
 } from '@/lib/board-identity'
-import { applyPendingCaptures } from '@/lib/capture-placement'
+import {
+  buildPlacementPlan,
+  commitPlacementPlan,
+  findBoardOverlap,
+  pendingCaptureToArtifact,
+} from '@/lib/capture-placement'
+import { applyOrganizePlan, requestArtifactOrganizePlan } from '@/lib/organizeImages'
 import { supabase } from '@/lib/supabase'
 import type { PendingCapture } from '@/types/captures'
+import type {
+  HoldingCellArtifact,
+  HoldingCellBoardProposal,
+  HoldingCellDraft,
+  HoldingCellMode,
+  PlacementPlan,
+} from '@/types/holding-cell'
+import type { OrganizeArtifactInput, OrganizeArtifactPreview, OrganizePlanBoardPreview } from '@/types/organize'
 
 interface ActiveBoard {
   boardId?: string
@@ -33,6 +46,24 @@ interface CanvasUIProps {
   accessToken?: string | null
 }
 
+interface OrganizeStatusDetail {
+  active?: boolean
+  label?: string
+}
+
+interface PlacementStartDetail {
+  source: 'organize'
+  plan: PlacementPlan
+  boards: OrganizePlanBoardPreview[]
+  canvasId: string
+}
+
+const HOLDING_CELL_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 6
+
+function getHoldingCellStorageKey(canvasId: string) {
+  return `grain:holding-cell:${canvasId}`
+}
+
 export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const editor = useEditor()
   const { isDefaultTheme, resetTheme } = useTheme()
@@ -41,23 +72,382 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const [toolbarAI, setToolbarAI] = useState(false)
   const [toolbarAIAnchor, setToolbarAIAnchor] = useState<{ x: number; y: number } | null>(null)
   const [aiBarVisible, setAiBarVisible] = useState(false)
-  const [revertAnchor, setRevertAnchor] = useState<{ left: number; top: number } | null>(null)
+  const [clusterAnchor, setClusterAnchor] = useState<{ left: number; top: number } | null>(null)
   const [lastBoardName, setLastBoardName] = useState<string | null>(null)
   const [dnaExtracting, setDnaExtracting] = useState(false)
-  const isApplyingCapturesRef = useRef(false)
+  const [pendingCaptures, setPendingCaptures] = useState<PendingCapture[]>([])
+  const [holdingSelectedIds, setHoldingSelectedIds] = useState<string[]>([])
+  const [holdingSelectionClearedByUser, setHoldingSelectionClearedByUser] = useState(false)
+  const [holdingOpen, setHoldingOpen] = useState(false)
+  const [holdingMode, setHoldingMode] = useState<HoldingCellMode>('review')
+  const [groupedBoards, setGroupedBoards] = useState<HoldingCellBoardProposal[]>([])
+  const [groupReviewCaptureIds, setGroupReviewCaptureIds] = useState<string[]>([])
+  const [groupedSnapshotSelectedIds, setGroupedSnapshotSelectedIds] = useState<string[]>([])
+  const [isGroupingHolding, setIsGroupingHolding] = useState(false)
+  const [draftHydrated, setDraftHydrated] = useState(false)
+  const [seenCaptureIds, setSeenCaptureIds] = useState<string[]>([])
+  const [unseenPendingCaptureIds, setUnseenPendingCaptureIds] = useState<string[]>([])
+  const [sessionNewCaptureIds, setSessionNewCaptureIds] = useState<string[]>([])
+  const [holdingDismissedThisSession, setHoldingDismissedThisSession] = useState(false)
+  const [footerNoticeCaptureIds, setFooterNoticeCaptureIds] = useState<string[]>([])
+  const [placementPlan, setPlacementPlan] = useState<PlacementPlan | null>(null)
+  const [placementSource, setPlacementSource] = useState<'holding-cell' | 'organize' | null>(null)
+  const [organizePlacementBoards, setOrganizePlacementBoards] = useState<OrganizePlanBoardPreview[]>([])
+  const [placementOverlapFrameId, setPlacementOverlapFrameId] = useState<TLShapeId | null>(null)
+  const [placementPendingAnchor, setPlacementPendingAnchor] = useState<{ x: number; y: number } | null>(null)
+  const [placementError, setPlacementError] = useState<string | null>(null)
+  const [organizeStatus, setOrganizeStatus] = useState<{ active: boolean; label: string }>({
+    active: false,
+    label: 'Organizing artifacts...',
+  })
   const capturePollTimeoutRef = useRef<number | null>(null)
   const relinkingFramesRef = useRef(new Set<string>())
+  const groupedBoardsRef = useRef(groupedBoards)
+  const groupReviewCaptureIdsRef = useRef(groupReviewCaptureIds)
+  const groupedSnapshotSelectedIdsRef = useRef(groupedSnapshotSelectedIds)
+  const holdingModeRef = useRef(holdingMode)
+  const holdingSelectedIdsRef = useRef(holdingSelectedIds)
+  const holdingSelectionClearedByUserRef = useRef(holdingSelectionClearedByUser)
+  const seenCaptureIdsRef = useRef(seenCaptureIds)
+  const holdingDismissedThisSessionRef = useRef(holdingDismissedThisSession)
 
-  // Wire the AI button callbacks (image toolbar, context menu, selection toolbar)
+  const boardToRender = activeBoard?.boardName || lastBoardName
+  const storageKey = useMemo(() => getHoldingCellStorageKey(canvasId), [canvasId])
+  const holdingArtifacts = useMemo(
+    () => pendingCaptures.map((capture) => pendingCaptureToArtifact(capture)),
+    [pendingCaptures]
+  )
+
+  const clusterItems = useMemo(() => {
+    const items: Array<
+      | { id: string; type: 'button'; label: string; icon?: 'revert' | 'inbox'; onClick: () => void; highlight?: boolean }
+      | { id: string; type: 'status'; label: string; icon?: 'sparkles' | 'inbox' }
+    > = []
+
+    if (!isDefaultTheme) {
+      items.push({ id: 'revert-theme', type: 'button', label: 'Revert', icon: 'revert', onClick: resetTheme })
+    }
+
+    if (pendingCaptures.length > 0) {
+      items.push({
+        id: 'holding-cell',
+        type: 'button',
+        label: pendingCaptures.length === 1 ? '1 pending capture' : `${pendingCaptures.length} pending captures`,
+        icon: 'inbox',
+        onClick: () => {
+          setHoldingOpen(true)
+          setHoldingDismissedThisSession(false)
+          setSessionNewCaptureIds(unseenPendingCaptureIds)
+          setUnseenPendingCaptureIds([])
+          setFooterNoticeCaptureIds([])
+        },
+        highlight: unseenPendingCaptureIds.length > 0,
+      })
+    }
+
+    if (organizeStatus.active) {
+      items.push({ id: 'organize-status', type: 'status', label: organizeStatus.label, icon: 'sparkles' })
+    }
+
+    if (placementPlan) {
+      items.push({ id: 'placement-status', type: 'status', label: 'Click to place / Esc to cancel', icon: 'inbox' })
+    }
+
+    return items
+  }, [isDefaultTheme, organizeStatus.active, organizeStatus.label, pendingCaptures.length, placementPlan, resetTheme, unseenPendingCaptureIds])
+
+  const getAuthHeaders = useCallback(async () => {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token ?? accessToken
+    if (!token) return null
+    return { Authorization: `Bearer ${token}` }
+  }, [accessToken])
+
+  const markCapturesApplied = useCallback(async (captureIds: string[]) => {
+    if (captureIds.length === 0) return
+    const authHeaders = await getAuthHeaders()
+    if (!authHeaders) throw new Error('Authentication required to mark captures applied')
+
+    const response = await fetch('/api/send-to-grain/pending', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+      },
+      body: JSON.stringify({ canvasId, captureIds }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '')
+      throw new Error(errorText || 'Failed to mark captures applied')
+    }
+  }, [canvasId, getAuthHeaders])
+
+  const deletePendingCapture = useCallback(async (captureId: string) => {
+    const authHeaders = await getAuthHeaders()
+    if (!authHeaders) throw new Error('Authentication required to delete captures')
+
+    const response = await fetch('/api/send-to-grain/pending', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+      },
+      body: JSON.stringify({ canvasId, captureIds: [captureId] }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '')
+      throw new Error(errorText || 'Failed to delete capture')
+    }
+
+    setPendingCaptures((current) => current.filter((capture) => capture.id !== captureId))
+    setHoldingSelectedIds((current) => current.filter((id) => id !== captureId))
+    setGroupReviewCaptureIds((current) => current.filter((id) => id !== captureId))
+    setGroupedBoards((current) =>
+      current
+        .map((board) => ({
+          ...board,
+          artifacts: board.artifacts.filter((artifact) => artifact.id !== captureId),
+        }))
+        .filter((board) => board.artifacts.length > 0)
+    )
+    setGroupedSnapshotSelectedIds((current) => current.filter((id) => id !== captureId))
+    setUnseenPendingCaptureIds((current) => current.filter((id) => id !== captureId))
+    setSessionNewCaptureIds((current) => current.filter((id) => id !== captureId))
+    setFooterNoticeCaptureIds((current) => current.filter((id) => id !== captureId))
+    setSeenCaptureIds((current) => current.filter((id) => id !== captureId))
+  }, [canvasId, getAuthHeaders])
+
+  const updateClusterAnchor = useCallback(() => {
+    const button = document.querySelector('.grain-organize-toolbar-button') as HTMLElement | null
+    if (!button) {
+      setClusterAnchor(null)
+      return
+    }
+    const rect = button.getBoundingClientRect()
+    setClusterAnchor({ left: rect.left + rect.width / 2, top: rect.top - 8 })
+  }, [])
+
+  const handleExtractDna = useCallback(() => {
+    const selected = editor.getSelectedShapes()
+    const frame = selected.find((s) => s.type === 'frame')
+    if (!frame) return
+    const name = (frame.props as { name?: string }).name
+    if (!name) return
+
+    setActiveBoard({
+      boardId: getBoardIdFromMeta(frame),
+      boardName: name,
+      frameShapeId: frame.id,
+    })
+    setLastBoardName(name)
+    setPanelVisible(true)
+  }, [editor])
+
+  const handleAskAI = useCallback(() => {
+    setToolbarAIAnchor(null)
+    setToolbarAI(true)
+  }, [])
+
+  useEffect(() => {
+    groupedBoardsRef.current = groupedBoards
+  }, [groupedBoards])
+
+  useEffect(() => {
+    groupReviewCaptureIdsRef.current = groupReviewCaptureIds
+  }, [groupReviewCaptureIds])
+
+  useEffect(() => {
+    groupedSnapshotSelectedIdsRef.current = groupedSnapshotSelectedIds
+  }, [groupedSnapshotSelectedIds])
+
+  useEffect(() => {
+    holdingModeRef.current = holdingMode
+  }, [holdingMode])
+
+  useEffect(() => {
+    holdingSelectedIdsRef.current = holdingSelectedIds
+  }, [holdingSelectedIds])
+
+  useEffect(() => {
+    holdingSelectionClearedByUserRef.current = holdingSelectionClearedByUser
+  }, [holdingSelectionClearedByUser])
+
+  useEffect(() => {
+    seenCaptureIdsRef.current = seenCaptureIds
+  }, [seenCaptureIds])
+
+  useEffect(() => {
+    holdingDismissedThisSessionRef.current = holdingDismissedThisSession
+  }, [holdingDismissedThisSession])
+
+  useEffect(() => {
+    if (holdingMode === 'group-review') {
+      setGroupedSnapshotSelectedIds(holdingSelectedIds)
+    }
+  }, [holdingMode, holdingSelectedIds])
+
+  const handleRejectHoldingPlan = useCallback(() => {
+    setGroupedBoards([])
+    setGroupReviewCaptureIds([])
+    setGroupedSnapshotSelectedIds([])
+    setFooterNoticeCaptureIds([])
+    setHoldingMode('review')
+    setHoldingSelectedIds(pendingCaptures.map((capture) => capture.id))
+    setHoldingSelectionClearedByUser(false)
+  }, [pendingCaptures])
+
+  const handleHoldingSelectionChange = useCallback((selectedIds: string[]) => {
+    setHoldingSelectedIds(selectedIds)
+    setHoldingSelectionClearedByUser(selectedIds.length === 0)
+  }, [])
+
+  const handleBeginPlacement = useCallback(() => {
+    const selectedBoardIds = new Set(
+      holdingSelectedIds.filter((id) => id.startsWith('board:')).map((id) => id.replace(/^board:/, ''))
+    )
+    const selectedBoards = groupedBoards.filter((board) => selectedBoardIds.has(board.id))
+    const selectedArtifacts = holdingArtifacts.filter((artifact) => holdingSelectedIds.includes(artifact.id))
+    if (selectedBoards.length === 0 && selectedArtifacts.length === 0) return
+
+    setPlacementPlan(buildPlacementPlan({ artifacts: selectedArtifacts, boards: selectedBoards }))
+    setPlacementSource('holding-cell')
+    setOrganizePlacementBoards([])
+    setHoldingOpen(false)
+    setPlacementError(null)
+    setHoldingMode('placement')
+  }, [groupedBoards, holdingArtifacts, holdingSelectedIds])
+
+  const finalizePlacement = useCallback(async (anchor: { x: number; y: number }, targetBoardFrame: TLFrameShape | null) => {
+    if (!placementPlan) return
+
+    if (placementSource === 'organize') {
+      await applyOrganizePlan(editor, canvasId, organizePlacementBoards, {
+        anchor,
+        plan: placementPlan,
+        preserveDimensions: true,
+      })
+      setPlacementPlan(null)
+      setPlacementSource(null)
+      setOrganizePlacementBoards([])
+      setPlacementOverlapFrameId(null)
+      setPlacementPendingAnchor(null)
+      setPlacementError(null)
+      window.dispatchEvent(
+        new CustomEvent('grain:placement-finished', {
+          detail: {
+            source: 'organize',
+            outcome: 'committed',
+          },
+        })
+      )
+      return
+    }
+
+    const result = await commitPlacementPlan({
+      editor,
+      canvasId,
+      pageId: editor.getCurrentPageId() as TLPageId,
+      anchor,
+      plan: placementPlan,
+      targetBoardFrame,
+    })
+
+    await markCapturesApplied(result.captureIds)
+
+    const appliedIds = new Set(result.captureIds)
+    const nextGroupedBoards = groupedBoards
+      .map((board) => ({
+        ...board,
+        artifacts: board.artifacts.filter((artifact) => !appliedIds.has(artifact.id)),
+      }))
+      .filter((board) => board.artifacts.length > 0)
+    const validBoardSelectionIds = new Set(nextGroupedBoards.map((board) => `board:${board.id}`))
+    const nextGroupReviewCaptureIds = groupReviewCaptureIds.filter((id) => !appliedIds.has(id))
+    const nextGroupedSnapshotSelectedIds = groupedSnapshotSelectedIds.filter(
+      (id) => !appliedIds.has(id) && (!id.startsWith('board:') || validBoardSelectionIds.has(id))
+    )
+
+    setPendingCaptures((current) => current.filter((capture) => !appliedIds.has(capture.id)))
+    setGroupedBoards(nextGroupedBoards)
+    setGroupReviewCaptureIds(nextGroupReviewCaptureIds)
+    setGroupedSnapshotSelectedIds(nextGroupedSnapshotSelectedIds)
+    setHoldingSelectedIds((current) =>
+      current.filter((id) => !appliedIds.has(id) && (!id.startsWith('board:') || validBoardSelectionIds.has(id)))
+    )
+    setHoldingSelectionClearedByUser(false)
+    setPlacementPlan(null)
+    setPlacementSource(null)
+    setOrganizePlacementBoards([])
+    setPlacementOverlapFrameId(null)
+    setPlacementPendingAnchor(null)
+    setPlacementError(null)
+    setFooterNoticeCaptureIds((current) => current.filter((id) => !appliedIds.has(id)))
+    setHoldingMode(nextGroupedBoards.length > 0 || nextGroupReviewCaptureIds.length > 0 ? 'group-review' : 'review')
+  }, [canvasId, editor, groupReviewCaptureIds, groupedBoards, groupedSnapshotSelectedIds, markCapturesApplied, organizePlacementBoards, placementPlan, placementSource])
+
   useEffect(() => {
     const handleAskAI = (event: Event) => {
       const customEvent = event as CustomEvent<{ anchor?: { x: number; y: number } }>
       setToolbarAIAnchor(customEvent.detail?.anchor || null)
       setToolbarAI(true)
     }
+
     window.addEventListener('grain:ask-ai', handleAskAI)
     return () => window.removeEventListener('grain:ask-ai', handleAskAI)
   }, [])
+
+  useEffect(() => {
+    const handleOrganizeStatus = (event: Event) => {
+      const detail = (event as CustomEvent<OrganizeStatusDetail>).detail || {}
+      setOrganizeStatus({
+        active: Boolean(detail.active),
+        label: detail.label || 'Organizing artifacts...',
+      })
+    }
+
+    window.addEventListener('grain:organize-status', handleOrganizeStatus)
+    return () => window.removeEventListener('grain:organize-status', handleOrganizeStatus)
+  }, [])
+
+  useEffect(() => {
+    const handlePlacementStart = (event: Event) => {
+      const detail = (event as CustomEvent<PlacementStartDetail>).detail
+      if (!detail || detail.source !== 'organize' || detail.canvasId !== canvasId) return
+
+      setPlacementPlan(detail.plan)
+      setPlacementSource('organize')
+      setOrganizePlacementBoards(detail.boards)
+      setPlacementOverlapFrameId(null)
+      setPlacementPendingAnchor(null)
+      setPlacementError(null)
+    }
+
+    window.addEventListener('grain:start-placement', handlePlacementStart)
+    return () => window.removeEventListener('grain:start-placement', handlePlacementStart)
+  }, [canvasId])
+
+  useEffect(() => {
+    if (clusterItems.length === 0) {
+      setClusterAnchor(null)
+      return
+    }
+
+    let frame = 0
+    const scheduleUpdate = () => {
+      cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(updateClusterAnchor)
+    }
+
+    scheduleUpdate()
+    window.addEventListener('resize', scheduleUpdate)
+
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', scheduleUpdate)
+    }
+  }, [clusterItems.length, updateClusterAnchor])
 
   useEffect(() => {
     const syncFrameBoardChildren = (frameId: TLShapeId, boardId: string) => {
@@ -115,8 +505,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         })
 
         syncFrameBoardChildren(frame.id, cloneData.id)
-      } catch {
-        return
       } finally {
         relinkingFramesRef.current.delete(shapeId)
       }
@@ -167,15 +555,9 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     }
   }, [canvasId, editor])
 
-  // Watch for selection changes reactively
-  const selectedShapes = useValue(
-    'selectedShapes',
-    () => editor.getSelectedShapes(),
-    [editor]
-  )
+  const selectedShapes = useValue('selectedShapes', () => editor.getSelectedShapes(), [editor])
 
   useEffect(() => {
-    // If exactly one frame is selected, open its DNA panel
     if (selectedShapes.length === 1 && selectedShapes[0].type === 'frame') {
       const frame = selectedShapes[0]
       const name = (frame.props as { name?: string }).name
@@ -190,10 +572,9 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
           setPanelVisible(true)
         })
         return () => window.cancelAnimationFrame(animationFrame)
-        return
       }
     }
-    // Nothing selected — hide the panel but keep it mounted
+
     if (selectedShapes.length === 0) {
       const animationFrame = window.requestAnimationFrame(() => {
         setPanelVisible(false)
@@ -202,65 +583,69 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     }
   }, [selectedShapes])
 
-  // Callback for AI to trigger DNA extraction
-  const handleExtractDna = useCallback(() => {
-    const selected = editor.getSelectedShapes()
-    const frame = selected.find((s) => s.type === 'frame')
-    if (frame) {
-      const name = (frame.props as { name?: string }).name
-      if (name) {
-        setActiveBoard({
-          boardId: getBoardIdFromMeta(frame),
-          boardName: name,
-          frameShapeId: frame.id,
-        })
-        setLastBoardName(name)
-        setPanelVisible(true)
-      }
-    }
-  }, [editor])
-
-  const handleAskAI = useCallback(() => {
-    setToolbarAIAnchor(null)
-    setToolbarAI(true)
-  }, [])
-
-  const boardToRender = activeBoard?.boardName || lastBoardName
-
   useEffect(() => {
-    if (isDefaultTheme) {
-      return
-    }
+    if (typeof window === 'undefined') return
 
-    let frame = 0
-
-    const updateAnchor = () => {
-      const button = document.querySelector('.grain-organize-toolbar-button') as HTMLElement | null
-      if (!button) {
-        setRevertAnchor(null)
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      if (!raw) {
+        setDraftHydrated(true)
         return
       }
 
-      const rect = button.getBoundingClientRect()
-      setRevertAnchor({
-        left: rect.left + rect.width / 2,
-        top: rect.top - 8,
-      })
+      const draft = JSON.parse(raw) as HoldingCellDraft
+      const isExpired = Date.now() - draft.savedAt > HOLDING_CELL_DRAFT_MAX_AGE_MS
+      if (isExpired || draft.canvasId !== canvasId) {
+        window.localStorage.removeItem(storageKey)
+        setDraftHydrated(true)
+        return
+      }
+
+      setHoldingSelectedIds(Array.isArray(draft.selectedIds) ? draft.selectedIds : [])
+      setHoldingSelectionClearedByUser(Array.isArray(draft.selectedIds) && draft.selectedIds.length === 0)
+      setHoldingMode(draft.mode === 'group-review' ? 'group-review' : 'review')
+      setGroupedBoards(Array.isArray(draft.groupedBoards) ? draft.groupedBoards : [])
+      setGroupReviewCaptureIds(Array.isArray(draft.groupReviewCaptureIds) ? draft.groupReviewCaptureIds : [])
+      setGroupedSnapshotSelectedIds(Array.isArray(draft.groupedSnapshotSelectedIds) ? draft.groupedSnapshotSelectedIds : [])
+      setHoldingOpen(Boolean(draft.modalOpen))
+      setSeenCaptureIds(Array.isArray(draft.seenCaptureIds) ? draft.seenCaptureIds : [])
+    } catch {
+      window.localStorage.removeItem(storageKey)
+    } finally {
+      setDraftHydrated(true)
+    }
+  }, [canvasId, storageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !draftHydrated) return
+
+    const draft: HoldingCellDraft = {
+      canvasId,
+      pendingCaptureIds: pendingCaptures.map((capture) => capture.id),
+      seenCaptureIds,
+      selectedIds: holdingSelectedIds,
+      mode: holdingMode === 'placement' ? (groupedBoards.length > 0 ? 'group-review' : 'review') : holdingMode,
+      groupedBoards,
+      groupReviewCaptureIds,
+      groupedSnapshotSelectedIds,
+      modalOpen: holdingMode === 'placement' ? false : holdingOpen,
+      savedAt: Date.now(),
     }
 
-    const scheduleUpdate = () => {
-      cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(updateAnchor)
-    }
-
-    scheduleUpdate()
-    window.addEventListener('resize', scheduleUpdate)
-
-    return () => {
-      cancelAnimationFrame(frame)
-      window.removeEventListener('resize', scheduleUpdate)
-    }
-  }, [isDefaultTheme])
+    window.localStorage.setItem(storageKey, JSON.stringify(draft))
+  }, [
+    canvasId,
+    draftHydrated,
+    groupReviewCaptureIds,
+    groupedBoards,
+    groupedSnapshotSelectedIds,
+    holdingMode,
+    holdingOpen,
+    holdingSelectedIds,
+    pendingCaptures,
+    seenCaptureIds,
+    storageKey,
+  ])
 
   useEffect(() => {
     if (!accessToken) return
@@ -268,17 +653,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     let cancelled = false
     const FAST_POLL_MS = 1500
     const IDLE_POLL_MS = 4000
-
-    const getAuthHeaders = async () => {
-      const { data } = await supabase.auth.getSession()
-      const token = data.session?.access_token ?? accessToken
-
-      if (!token) return null
-
-      return {
-        Authorization: `Bearer ${token}`,
-      }
-    }
 
     const clearScheduledPoll = () => {
       if (capturePollTimeoutRef.current) {
@@ -289,9 +663,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
 
     const scheduleNextPoll = (delay: number) => {
       clearScheduledPoll()
-
       if (cancelled) return
-
       capturePollTimeoutRef.current = window.setTimeout(() => {
         if (!cancelled && !document.hidden) {
           void loadPendingCaptures()
@@ -300,8 +672,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     }
 
     const loadPendingCaptures = async () => {
-      if (isApplyingCapturesRef.current) return
-      isApplyingCapturesRef.current = true
       let nextPollDelay = IDLE_POLL_MS
 
       try {
@@ -330,45 +700,85 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         }
 
         const data = (await response.json()) as { captures?: PendingCapture[] }
-        const captures = data.captures || []
-        console.info('[SendToGrain] pending captures fetched', {
-          canvasId,
-          count: captures.length,
-          ids: captures.map((capture) => capture.id),
+        const captures = (data.captures || []).slice().sort((a, b) => {
+          const aTime = Date.parse(a.created_at)
+          const bTime = Date.parse(b.created_at)
+          return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0)
         })
-        if (!captures.length || cancelled) return
+        const captureIds = captures.map((capture) => capture.id)
 
-        const appliedIds = await applyPendingCaptures(editor, captures)
-        console.info('[SendToGrain] pending captures applied', {
-          canvasId,
-          appliedIds,
-        })
-        nextPollDelay = FAST_POLL_MS
-        if (!appliedIds.length || cancelled) return
+        const activeCaptureIdSet = new Set(captureIds)
+        const nextGroupedBoards = groupedBoardsRef.current
+          .map((board) => ({
+            ...board,
+            artifacts: board.artifacts.filter((artifact) => activeCaptureIdSet.has(artifact.id)),
+          }))
+          .filter((board) => board.artifacts.length > 0)
+        const validBoardIds = new Set(nextGroupedBoards.map((board) => `board:${board.id}`))
+        const nextGroupReviewCaptureIds = groupReviewCaptureIdsRef.current.filter((id) => activeCaptureIdSet.has(id))
+        const nextGroupedSnapshotSelectedIds = groupedSnapshotSelectedIdsRef.current.filter(
+          (id) => activeCaptureIdSet.has(id) || validBoardIds.has(id)
+        )
 
-        const authHeadersForMark = await getAuthHeaders()
-        if (!authHeadersForMark) return
+        setPendingCaptures(captures)
+        setGroupedBoards(nextGroupedBoards)
+        setGroupReviewCaptureIds(nextGroupReviewCaptureIds)
+        setGroupedSnapshotSelectedIds(nextGroupedSnapshotSelectedIds)
+        setHoldingSelectedIds((current) =>
+          current.filter((id) => activeCaptureIdSet.has(id) || validBoardIds.has(id))
+        )
 
-        const markAppliedResponse = await fetch('/api/send-to-grain/pending', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeadersForMark,
-          },
-          body: JSON.stringify({
-            canvasId,
-            captureIds: appliedIds,
-          }),
-        })
+        if (captures.length > 0) {
+          const unseenIds = captureIds.filter((id) => !seenCaptureIdsRef.current.includes(id))
+          if (unseenIds.length > 0) {
+            setSeenCaptureIds((current) => Array.from(new Set([...current, ...captureIds])))
+            const isGroupedReviewOpen = holdingOpen && holdingModeRef.current === 'group-review'
 
-        if (!markAppliedResponse.ok) {
-          const errorText = await markAppliedResponse.text().catch(() => '')
-          console.error('Failed to mark captures applied:', markAppliedResponse.status, errorText)
+            if (isGroupedReviewOpen) {
+              setFooterNoticeCaptureIds((current) => Array.from(new Set([...current, ...unseenIds])))
+              setUnseenPendingCaptureIds([])
+            } else if (holdingDismissedThisSessionRef.current) {
+              setUnseenPendingCaptureIds((current) => Array.from(new Set([...current, ...unseenIds])))
+              if (holdingModeRef.current === 'group-review') {
+                setFooterNoticeCaptureIds((current) => Array.from(new Set([...current, ...unseenIds])))
+              }
+            } else {
+              setHoldingOpen(true)
+              setSessionNewCaptureIds(unseenIds)
+              setUnseenPendingCaptureIds([])
+              setFooterNoticeCaptureIds([])
+              if (holdingModeRef.current !== 'group-review') {
+                setHoldingMode('review')
+                setHoldingSelectedIds(captureIds)
+                setHoldingSelectionClearedByUser(false)
+              }
+            }
+          } else if (
+            holdingSelectedIdsRef.current.length === 0 &&
+            !holdingSelectionClearedByUserRef.current &&
+            holdingModeRef.current !== 'group-review'
+          ) {
+            setHoldingSelectedIds(captureIds)
+            setHoldingSelectionClearedByUser(false)
+          }
+          nextPollDelay = FAST_POLL_MS
+        } else {
+          setHoldingSelectedIds([])
+          setHoldingSelectionClearedByUser(false)
+          setGroupedBoards([])
+          setGroupReviewCaptureIds([])
+          setGroupedSnapshotSelectedIds([])
+          setSessionNewCaptureIds([])
+          setUnseenPendingCaptureIds([])
+          setFooterNoticeCaptureIds([])
+          setHoldingOpen(false)
+          if (holdingModeRef.current !== 'placement') {
+            setHoldingMode('review')
+          }
         }
       } catch (error) {
-        console.error('Failed to apply pending captures:', error)
+        console.error('Failed to load pending captures:', error)
       } finally {
-        isApplyingCapturesRef.current = false
         if (!cancelled && !document.hidden) {
           scheduleNextPoll(nextPollDelay)
         }
@@ -397,38 +807,138 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       window.removeEventListener('online', triggerImmediateSync)
       document.removeEventListener('visibilitychange', triggerImmediateSync)
     }
-  }, [accessToken, canvasId, editor])
+  }, [
+    accessToken,
+    canvasId,
+    getAuthHeaders,
+    holdingOpen,
+  ])
+
+  const handleGroupPendingCaptures = useCallback(async () => {
+    if (isGroupingHolding) return
+
+    const selectedArtifacts = holdingArtifacts.filter((artifact) => holdingSelectedIds.includes(artifact.id))
+    if (selectedArtifacts.length === 0) return
+
+    setIsGroupingHolding(true)
+
+    try {
+      const previewMap = new Map(
+        selectedArtifacts.map((artifact) => [artifact.id, artifact as OrganizeArtifactPreview])
+      )
+      const input: OrganizeArtifactInput[] = selectedArtifacts.map((artifact) => ({
+        id: artifact.id,
+        kind: artifact.kind,
+        url: artifact.url,
+        previewUrl: artifact.previewUrl,
+        title: artifact.title,
+        description: artifact.description,
+        position_x: artifact.position_x,
+        position_y: artifact.position_y,
+      }))
+
+      const plan = await requestArtifactOrganizePlan(input, canvasId, previewMap)
+      if (!plan?.length) return
+
+      const groupedArtifactIds = new Set(plan.flatMap((board) => board.artifacts.map((artifact) => artifact.id)))
+      const leftoverArtifacts = selectedArtifacts.filter((artifact) => !groupedArtifactIds.has(artifact.id))
+
+      setGroupedBoards(
+        plan.map((board) => ({
+          id: board.id,
+          board_name: board.board_name,
+          reason: board.reason,
+          artifacts: board.artifacts as HoldingCellArtifact[],
+        }))
+      )
+      setGroupReviewCaptureIds(leftoverArtifacts.map((artifact) => artifact.id))
+      setHoldingMode('group-review')
+      const nextSelectedIds = [...plan.map((board) => `board:${board.id}`), ...leftoverArtifacts.map((artifact) => artifact.id)]
+      setGroupedSnapshotSelectedIds(nextSelectedIds)
+      setHoldingSelectedIds(nextSelectedIds)
+      setHoldingSelectionClearedByUser(false)
+      setFooterNoticeCaptureIds([])
+    } finally {
+      setIsGroupingHolding(false)
+    }
+  }, [canvasId, holdingArtifacts, holdingSelectedIds, isGroupingHolding])
+
+  useEffect(() => {
+    if (!placementPlan) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPlacementPlan(null)
+        setPlacementSource(null)
+        setOrganizePlacementBoards([])
+        setPlacementOverlapFrameId(null)
+        setPlacementPendingAnchor(null)
+        setPlacementError(null)
+        if (placementSource === 'organize') {
+          window.dispatchEvent(
+            new CustomEvent('grain:placement-finished', {
+              detail: {
+                source: 'organize',
+                outcome: 'cancelled',
+              },
+            })
+          )
+        }
+        if (placementSource !== 'organize') {
+          setHoldingMode(groupedBoards.length > 0 ? 'group-review' : 'review')
+          setHoldingOpen(true)
+        }
+      }
+    }
+
+    const handlePointerDown = async (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('.tlui-layout')) return
+      if (target.closest('.grain-dna-panel')) return
+
+      const anchor = editor.inputs.getCurrentPagePoint()
+      const overlapFrame = findBoardOverlap(editor, editor.getCurrentPageId() as TLPageId, anchor, placementPlan)
+
+      if (overlapFrame) {
+        if (placementPlan.containsBoards) {
+          setPlacementError("Boards can't be placed inside other boards.")
+          return
+        }
+
+        setPlacementPendingAnchor(anchor)
+        setPlacementOverlapFrameId(overlapFrame.id)
+        return
+      }
+
+      try {
+        await finalizePlacement(anchor, null)
+      } catch (error) {
+        setPlacementError(error instanceof Error ? error.message : 'Failed to place captures')
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('pointerdown', handlePointerDown, { capture: true })
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('pointerdown', handlePointerDown, { capture: true })
+    }
+  }, [editor, finalizePlacement, groupedBoards.length, placementPlan, placementSource])
+
+  const groupedArtifactIds = useMemo(
+    () => new Set(groupedBoards.flatMap((board) => board.artifacts.map((artifact) => artifact.id))),
+    [groupedBoards]
+  )
+  const groupReviewCaptureIdSet = useMemo(() => new Set(groupReviewCaptureIds), [groupReviewCaptureIds])
+  const footerNoticeText = footerNoticeCaptureIds.length === 1
+    ? '1 new capture available'
+    : `${footerNoticeCaptureIds.length} new captures available`
+  const hasGroupedSnapshot = groupedBoards.length > 0 || groupReviewCaptureIds.length > 0
 
   return (
     <>
-      {!isDefaultTheme && (
-        <button
-          onClick={resetTheme}
-          title="Revert theme"
-          style={{
-            position: 'fixed',
-            left: revertAnchor?.left ?? '50%',
-            top: revertAnchor?.top ?? 84,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '6px 12px',
-            borderRadius: '999px',
-            border: '1px solid var(--color-border)',
-            backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-text)',
-            boxShadow: 'var(--shadow-toolbar)',
-            fontFamily: 'var(--font-family)',
-            fontSize: 12,
-            cursor: 'pointer',
-          }}
-        >
-          <RotateCcw size={12} />
-          Revert
-        </button>
-      )}
       {!aiBarVisible && <GrainSelectionToolbar canvasId={canvasId} onAskAI={handleAskAI} />}
       <AIActionBar
         canvasId={canvasId}
@@ -440,12 +950,14 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         }}
         onVisibilityChange={setAiBarVisible}
       />
-      <BoardProcessingOverlay
-        frameShapeId={activeBoard?.frameShapeId ?? null}
-        active={dnaExtracting}
-        label="Extracting DNA..."
-      />
-      {boardToRender && (
+
+      {clusterItems.length > 0 && clusterAnchor ? (
+        <PillCluster anchor={clusterAnchor} items={clusterItems} />
+      ) : null}
+
+      <BoardProcessingOverlay frameShapeId={activeBoard?.frameShapeId ?? null} active={dnaExtracting} label="Extracting DNA..." />
+
+      {boardToRender ? (
         <DNAPanelV2
           boardName={boardToRender}
           boardId={activeBoard?.boardId}
@@ -455,8 +967,351 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
           onClose={() => setPanelVisible(false)}
           onExtractionStateChange={setDnaExtracting}
         />
-      )}
+      ) : null}
+
+      <HoldingCellModal
+        open={holdingOpen && pendingCaptures.length > 0}
+        mode={holdingMode === 'placement' ? (groupedBoards.length > 0 ? 'group-review' : 'review') : holdingMode}
+        captures={holdingMode === 'group-review'
+          ? holdingArtifacts.filter((artifact) => groupReviewCaptureIdSet.has(artifact.id) && !groupedArtifactIds.has(artifact.id))
+          : holdingArtifacts}
+        groupedBoards={groupedBoards}
+        newCaptureIds={sessionNewCaptureIds}
+        selectedIds={holdingSelectedIds}
+        isGrouping={isGroupingHolding}
+        onSelectionChange={handleHoldingSelectionChange}
+        onDeleteCapture={(captureId) => {
+          void deletePendingCapture(captureId)
+        }}
+        onClose={() => {
+          setHoldingOpen(false)
+          setHoldingDismissedThisSession(true)
+          setSessionNewCaptureIds([])
+        }}
+        onGroup={handleGroupPendingCaptures}
+        onRejectPlan={handleRejectHoldingPlan}
+        onPlaceSelected={handleBeginPlacement}
+        footerNotice={holdingMode === 'group-review' && footerNoticeCaptureIds.length > 0 ? {
+          text: footerNoticeText,
+          ctaLabel: 'Review them',
+          onClick: () => {
+            setGroupedSnapshotSelectedIds(holdingSelectedIds)
+            setHoldingMode('review')
+            setHoldingSelectedIds(pendingCaptures.map((capture) => capture.id))
+            setSessionNewCaptureIds(footerNoticeCaptureIds)
+            setFooterNoticeCaptureIds([])
+            setUnseenPendingCaptureIds([])
+          },
+          animate: true,
+        } : null}
+        footerSecondaryLink={holdingMode === 'review' && hasGroupedSnapshot ? {
+          label: 'Back to grouped plan',
+          onClick: () => {
+            setHoldingMode('group-review')
+            setHoldingSelectedIds(groupedSnapshotSelectedIds.length > 0 ? groupedSnapshotSelectedIds : [
+              ...groupedBoards.map((board) => `board:${board.id}`),
+              ...groupReviewCaptureIds,
+            ])
+          },
+        } : null}
+      />
+
+      <PlacementPreviewOverlay active={Boolean(placementPlan)} plan={placementPlan} />
+
+      <PlacementDecisionModal
+        open={Boolean(placementOverlapFrameId && placementPendingAnchor)}
+        title="Place inside this board?"
+        description="Clicking Continue will place all selected captures inside the target board frame."
+        confirmLabel="Continue"
+        onClose={() => {
+          setPlacementOverlapFrameId(null)
+          setPlacementPendingAnchor(null)
+        }}
+        onConfirm={async () => {
+          if (!placementOverlapFrameId || !placementPendingAnchor) return
+          const frame = editor.getShape(placementOverlapFrameId) as TLFrameShape | undefined
+          if (!frame) {
+            setPlacementOverlapFrameId(null)
+            setPlacementPendingAnchor(null)
+            return
+          }
+          try {
+            await finalizePlacement(placementPendingAnchor, frame)
+          } catch (error) {
+            setPlacementError(error instanceof Error ? error.message : 'Failed to place captures')
+          }
+        }}
+      />
+
+      <PlacementDecisionModal
+        open={Boolean(placementError)}
+        title="Placement blocked"
+        description={placementError || ''}
+        confirmLabel="Okay"
+        hideCancel
+        onClose={() => setPlacementError(null)}
+        onConfirm={() => setPlacementError(null)}
+      />
     </>
+  )
+}
+
+function PillCluster({
+  anchor,
+  items,
+}: {
+  anchor: { left: number; top: number }
+  items: Array<
+    | { id: string; type: 'button'; label: string; icon?: 'revert' | 'inbox'; onClick: () => void; highlight?: boolean }
+    | { id: string; type: 'status'; label: string; icon?: 'sparkles' | 'inbox' }
+  >
+}) {
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        left: anchor.left,
+        top: anchor.top,
+        transform: 'translate(-50%, -100%)',
+        zIndex: 1600,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      {items.map((item) =>
+        item.type === 'button' ? (
+          <button
+            key={item.id}
+            onClick={item.onClick}
+            style={{
+              ...pillStyle,
+              animation: item.highlight ? 'grain-pending-pill-shimmer 1.7s ease-in-out infinite' : undefined,
+              boxShadow: item.highlight
+                ? '0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent), var(--shadow-soft)'
+                : pillStyle.boxShadow,
+            }}
+          >
+            {item.icon === 'revert' ? <RotateCcw size={12} /> : <Inbox size={13} />}
+            {item.label}
+          </button>
+        ) : (
+          <div key={item.id} style={{ ...pillStyle, pointerEvents: 'none' }}>
+            {item.icon === 'sparkles' ? <Sparkles size={13} style={{ color: 'var(--color-accent)' }} /> : <Inbox size={13} />}
+            {item.label}
+          </div>
+        )
+      )}
+    </div>,
+    document.body
+  )
+}
+
+function PlacementPreviewOverlay({
+  active,
+  plan,
+}: {
+  active: boolean
+  plan: PlacementPlan | null
+}) {
+  const editor = useEditor()
+  type PreviewRect = {
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    type: 'capture' | 'board' | 'board-child'
+  }
+
+  const preview = useValue(
+    'holdingCellPlacementPreview',
+    () => {
+      if (!active || !plan) return null
+
+      const anchor = editor.inputs.getCurrentPagePoint()
+      const topLeft = editor.pageToViewport({ x: anchor.x, y: anchor.y })
+      const zoom = editor.getZoomLevel()
+
+      return {
+        left: topLeft.x,
+        top: topLeft.y,
+        width: plan.width * zoom,
+        height: plan.height * zoom,
+        items: plan.items.flatMap<PreviewRect>((item) => {
+          if (item.type === 'board') {
+            return [
+              {
+                id: `board:${item.board.id}`,
+                x: item.x * zoom,
+                y: item.y * zoom,
+                width: item.width * zoom,
+                height: item.height * zoom,
+                type: 'board' as const,
+              },
+              ...item.children.map((child, index) => ({
+                id: `board:${item.board.id}:child:${child.artifact.id}:${index}`,
+                x: (item.x + child.x) * zoom,
+                y: (item.y + child.y) * zoom,
+                width: child.width * zoom,
+                height: child.height * zoom,
+                type: 'board-child' as const,
+              })),
+            ]
+          }
+
+          return [
+            {
+              id: item.artifact.id,
+              x: item.x * zoom,
+              y: item.y * zoom,
+              width: item.width * zoom,
+              height: item.height * zoom,
+              type: 'capture' as const,
+            },
+          ]
+        }),
+      }
+    },
+    [active, editor, plan]
+  )
+
+  if (!preview) return null
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: preview.left,
+        top: preview.top,
+        width: preview.width,
+        height: preview.height,
+        pointerEvents: 'none',
+        zIndex: 1350,
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 'var(--radius-xl)',
+          border: '1px dashed color-mix(in srgb, var(--color-accent) 60%, var(--color-border))',
+          backgroundColor: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
+        }}
+      />
+      {preview.items.map((item) => (
+        <div
+          key={item.id}
+          style={{
+            position: 'absolute',
+            left: item.x,
+            top: item.y,
+            width: item.width,
+            height: item.height,
+            borderRadius: 'var(--radius-lg)',
+            border: item.type === 'board'
+              ? '1px dashed color-mix(in srgb, var(--color-text) 28%, var(--color-border))'
+              : item.type === 'board-child'
+                ? '1px solid color-mix(in srgb, var(--color-text) 12%, var(--color-border))'
+              : '1px solid color-mix(in srgb, var(--color-text) 16%, var(--color-border))',
+            backgroundColor: item.type === 'board'
+              ? 'color-mix(in srgb, var(--color-text) 4%, var(--color-surface))'
+              : item.type === 'board-child'
+                ? 'color-mix(in srgb, var(--color-surface) 64%, transparent)'
+              : 'color-mix(in srgb, var(--color-surface) 72%, transparent)',
+            boxShadow: 'var(--shadow-card)',
+            opacity: item.type === 'board-child' ? 0.58 : 0.75,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PlacementDecisionModal({
+  open,
+  title,
+  description,
+  confirmLabel,
+  hideCancel = false,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean
+  title: string
+  description: string
+  confirmLabel: string
+  hideCancel?: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  if (!open || typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1500,
+        backgroundColor: 'color-mix(in srgb, var(--color-text) 34%, transparent)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: 'min(420px, calc(100vw - 48px))',
+          borderRadius: 'var(--radius-xl)',
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-panel)',
+          padding: 24,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text)', marginBottom: 6 }}>
+              {title}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--color-muted)' }}>{description}</div>
+          </div>
+          <Button
+            onClick={onClose}
+            variant="outline"
+            size="icon-sm"
+            className="rounded-full text-[var(--color-muted)] bg-[var(--color-bg)]"
+            aria-label="Close decision modal"
+          >
+            <X size={14} />
+          </Button>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          {!hideCancel ? (
+            <Button onClick={onClose} variant="outline" size="lg" className="rounded-full bg-[var(--color-bg)]">
+              Cancel
+            </Button>
+          ) : null}
+          <Button
+            onClick={onConfirm}
+            size="lg"
+            className="rounded-full bg-[var(--color-accent)] text-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-accent)_88%,black_12%)]"
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 
@@ -507,9 +1362,22 @@ function BoardProcessingOverlay({
         height: overlayBounds.height,
       }}
     >
-      <div className="grain-board-processing-overlay__label">
-        {label}
-      </div>
+      <div className="grain-board-processing-overlay__label">{label}</div>
     </div>
   )
+}
+
+const pillStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 12px',
+  borderRadius: '999px',
+  backgroundColor: 'var(--color-surface)',
+  border: '1px solid var(--color-border)',
+  boxShadow: 'var(--shadow-toolbar)',
+  color: 'var(--color-text)',
+  fontFamily: 'var(--font-family)',
+  fontSize: 12,
+  cursor: 'pointer',
 }

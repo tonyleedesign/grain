@@ -37,9 +37,9 @@ import {
   XBoxToolbarItem,
 } from 'tldraw'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { LoaderCircle, Sparkles } from 'lucide-react'
-import { applyOrganizePlan, getUngroupedOrganizeArtifacts, requestOrganizePlan } from '@/lib/organizeImages'
+import { LoaderCircle } from 'lucide-react'
+import { buildPlacementPlan } from '@/lib/capture-placement'
+import { getUngroupedOrganizeArtifacts, requestOrganizePlan } from '@/lib/organizeImages'
 import { OrganizeReviewModal } from './OrganizeReviewModal'
 import type { OrganizePlanBoardPreview, OrganizePlanDraft } from '@/types/organize'
 
@@ -57,11 +57,10 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
   const editor = useEditor()
   const { addToast } = useToasts()
   const [isOrganizing, setIsOrganizing] = useState(false)
-  const [isApplying, setIsApplying] = useState(false)
+  const [isPlacing, setIsPlacing] = useState(false)
   const [proposals, setProposals] = useState<OrganizePlanBoardPreview[]>([])
   const [selectedProposalIds, setSelectedProposalIds] = useState<string[]>([])
   const [reviewOpen, setReviewOpen] = useState(false)
-  const [organizeAnchor, setOrganizeAnchor] = useState<{ left: number; top: number } | null>(null)
   const [draftHydrated, setDraftHydrated] = useState(false)
   const currentPageId = useValue('currentPageId', () => String(editor.getCurrentPageId()), [editor])
   const hasPendingReview = proposals.length > 0 && !reviewOpen
@@ -125,27 +124,39 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
       const selectedBoards = proposals.filter((proposal) => selectedIds.includes(proposal.id))
       if (!selectedBoards.length) return
 
-      setIsApplying(true)
+      const placementBoards = selectedBoards.map((board) => ({
+        id: board.id,
+        board_name: board.board_name,
+        reason: board.reason,
+        artifacts: board.artifacts.map((artifact) => ({
+          ...artifact,
+          sourceChannel: 'extension' as const,
+        })),
+      }))
+      const plan = buildPlacementPlan({ artifacts: [], boards: placementBoards, sizingMode: 'preserve' })
+
+      setIsPlacing(true)
       try {
-        await applyOrganizePlan(editor, canvasId, selectedBoards)
         setReviewOpen(false)
-        setProposals([])
-        setSelectedProposalIds([])
-      } catch (error) {
-        addToast({
-          title: 'Create boards failed',
-          description: error instanceof Error ? error.message : 'Something went wrong.',
-          severity: 'error',
-        })
-      } finally {
-        setIsApplying(false)
+        window.dispatchEvent(
+          new CustomEvent('grain:start-placement', {
+            detail: {
+              source: 'organize',
+              canvasId,
+              plan,
+              boards: selectedBoards,
+            },
+          })
+        )
+      } catch {
+        setIsPlacing(false)
       }
     },
-    [addToast, canvasId, editor, proposals]
+    [canvasId, proposals]
   )
 
   const handleRejectPlan = useCallback(() => {
-    if (isApplying) return
+    if (isPlacing) return
 
     setReviewOpen(false)
     setProposals([])
@@ -156,7 +167,29 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
       description: 'You can run Organize again to generate a new review.',
       severity: 'info',
     })
-  }, [addToast, isApplying])
+  }, [addToast, isPlacing])
+
+  useEffect(() => {
+    const handlePlacementFinished = (event: Event) => {
+      const detail = (event as CustomEvent<{ source?: string; outcome?: 'committed' | 'cancelled' }>).detail
+      if (detail?.source !== 'organize') return
+
+      setIsPlacing(false)
+      if (detail.outcome === 'committed') {
+        setProposals([])
+        setSelectedProposalIds([])
+        setReviewOpen(false)
+        return
+      }
+
+      if (detail.outcome === 'cancelled') {
+        setReviewOpen(true)
+      }
+    }
+
+    window.addEventListener('grain:placement-finished', handlePlacementFinished)
+    return () => window.removeEventListener('grain:placement-finished', handlePlacementFinished)
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -225,35 +258,24 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
   }, [canvasId, currentPageId, draftHydrated, draftStorageKey, proposals, reviewOpen, selectedProposalIds])
 
   useEffect(() => {
-    if (!isOrganizing) return
-
-    let frame = 0
-
-    const updateAnchor = () => {
-      const button = document.querySelector('.grain-organize-toolbar-button') as HTMLElement | null
-      if (!button) {
-        setOrganizeAnchor(null)
-        return
-      }
-
-      const rect = button.getBoundingClientRect()
-      setOrganizeAnchor({
-        left: rect.left + rect.width / 2,
-        top: rect.top - 8,
+    window.dispatchEvent(
+      new CustomEvent('grain:organize-status', {
+        detail: {
+          active: isOrganizing,
+          label: 'Organizing artifacts...',
+        },
       })
-    }
-
-    const scheduleUpdate = () => {
-      cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(updateAnchor)
-    }
-
-    scheduleUpdate()
-    window.addEventListener('resize', scheduleUpdate)
+    )
 
     return () => {
-      cancelAnimationFrame(frame)
-      window.removeEventListener('resize', scheduleUpdate)
+      window.dispatchEvent(
+        new CustomEvent('grain:organize-status', {
+          detail: {
+            active: false,
+            label: 'Organizing artifacts...',
+          },
+        })
+      )
     }
   }, [isOrganizing])
 
@@ -263,7 +285,7 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
         type="tool"
         title="Organize"
         tooltip="Organize"
-        disabled={isOrganizing || isApplying}
+        disabled={isOrganizing || isPlacing}
         onClick={handleOrganize}
         className={`grain-organize-toolbar-button${isOrganizing ? ' grain-organize-toolbar-button--loading' : ''}`}
       >
@@ -287,51 +309,16 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
           />
         )}
       </TldrawUiToolbarButton>
-      {isOrganizing &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            style={{
-              position: 'fixed',
-              left: organizeAnchor?.left ?? window.innerWidth / 2,
-              top: organizeAnchor?.top ?? 24,
-              transform: 'translate(-50%, -100%)',
-              zIndex: 1600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 12px',
-              borderRadius: '999px',
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              boxShadow: 'var(--shadow-toolbar)',
-              color: 'var(--color-text)',
-              fontFamily: 'var(--font-family)',
-              fontSize: 12,
-              pointerEvents: 'none',
-            }}
-          >
-            <Sparkles
-              size={14}
-              style={{
-                color: 'var(--color-accent)',
-                opacity: 0.9,
-              }}
-            />
-            Organizing artifacts...
-          </div>,
-          document.body
-        )}
       <OrganizeReviewModal
         open={reviewOpen}
         proposals={proposals}
         selectedIds={selectedProposalIds}
-        isApplying={isApplying}
+        isApplying={isPlacing}
         onSelectionChange={setSelectedProposalIds}
         onApply={handleApply}
         onReject={handleRejectPlan}
         onClose={() => {
-          if (isApplying) return
+          if (isPlacing) return
           setReviewOpen(false)
         }}
       />
