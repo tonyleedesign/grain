@@ -19,6 +19,22 @@ export interface CanvasAISelectionContext {
       imageUrls: string[]
     }>
   }
+  selectedLinks?: {
+    urls: string[]
+    links: Array<{
+      url: string
+      title?: string
+      description?: string
+      previewImageUrl?: string
+      boardId?: string
+      boardName?: string
+      shapeType: 'bookmark' | 'embed'
+    }>
+  }
+  selectedShapes?: {
+    count: number
+    shapeTypes: string[]
+  }
   canvasOverview: {
     totalBoards: number
     totalUngroupedImages: number

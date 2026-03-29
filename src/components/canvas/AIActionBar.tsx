@@ -18,8 +18,17 @@ interface AIActionBarProps {
   canvasId: string
   onExtractDna?: () => void
   forceExpanded?: boolean
+  forceAnchor?: { x: number; y: number } | null
   onForceExpandedConsumed?: () => void
   onVisibilityChange?: (visible: boolean) => void
+}
+
+function isFinitePoint(value: { x: number; y: number } | null | undefined): value is { x: number; y: number } {
+  return Boolean(
+    value &&
+      Number.isFinite(value.x) &&
+      Number.isFinite(value.y)
+  )
 }
 
 // Contextual suggestions based on selection type
@@ -65,6 +74,7 @@ export function AIActionBar({
   canvasId,
   onExtractDna,
   forceExpanded,
+  forceAnchor,
   onForceExpandedConsumed,
   onVisibilityChange,
 }: AIActionBarProps) {
@@ -74,6 +84,7 @@ export function AIActionBar({
   const [isProcessing, setIsProcessing] = useState(false)
   const [thinkingStatus, setThinkingStatus] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [floatingAnchor, setFloatingAnchor] = useState<{ x: number; y: number } | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -124,7 +135,8 @@ export function AIActionBar({
     () => {
       const bounds = editor.getSelectionPageBounds()
       if (!bounds) return null
-      return editor.pageToViewport({ x: bounds.midX, y: bounds.minY })
+      const point = editor.pageToViewport({ x: bounds.midX, y: bounds.minY })
+      return isFinitePoint(point) ? point : null
     },
     [editor]
   )
@@ -133,9 +145,10 @@ export function AIActionBar({
   useEffect(() => {
     if (forceExpanded) {
       setExpanded(true)
+      setFloatingAnchor(forceAnchor ?? null)
       onForceExpandedConsumed?.()
     }
-  }, [forceExpanded, onForceExpandedConsumed])
+  }, [forceExpanded, forceAnchor, onForceExpandedConsumed])
 
   // Close on click outside
   useEffect(() => {
@@ -144,12 +157,14 @@ export function AIActionBar({
       if (barRef.current && !barRef.current.contains(e.target as Node)) {
         setExpanded(false)
         setInputValue('')
+        setFloatingAnchor(null)
       }
     }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setExpanded(false)
         setInputValue('')
+        setFloatingAnchor(null)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -172,6 +187,7 @@ export function AIActionBar({
     setExpanded(false)
     setInputValue('')
     setShowDeleteConfirm(false)
+    setFloatingAnchor(null)
   }, [selectionKey])
 
   useEffect(() => {
@@ -317,14 +333,16 @@ export function AIActionBar({
   }, [editor])
 
   // Floating mode: expanded with no selection (context menu on blank canvas)
-  const isFloatingMode = !hasSelection && expanded
+  const isFloatingMode = expanded && (!!floatingAnchor || !hasSelection)
+  const safeFloatingAnchor = isFinitePoint(floatingAnchor) ? floatingAnchor : null
+  const safeBarPosition = isFinitePoint(barPosition) ? barPosition : null
 
   // Only render when expanded, processing, or confirming delete
   if (!expanded && !isProcessing && !showDeleteConfirm) return null
 
   // Show thinking indicator while processing
   if (isProcessing) {
-    if (barPosition) {
+    if (safeBarPosition) {
       return <AIThinkingIndicator status={thinkingStatus} />
     }
     return (
@@ -356,13 +374,13 @@ export function AIActionBar({
   }
 
   // Show delete confirmation
-  if (showDeleteConfirm && barPosition) {
+  if (showDeleteConfirm && safeBarPosition) {
     return (
       <div
         style={{
           position: 'fixed',
-          left: barPosition.x,
-          top: barPosition.y - 12,
+          left: safeBarPosition.x,
+          top: safeBarPosition.y - 12,
           transform: 'translate(-50%, -100%)',
           zIndex: 1000,
           display: 'flex',
@@ -423,12 +441,14 @@ export function AIActionBar({
   return (
     <div
       ref={barRef}
-      style={{
-        position: 'fixed',
-        ...(isFloatingMode
-          ? { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }
-          : barPosition
-            ? { left: barPosition.x, top: barPosition.y - 60, transform: 'translate(-50%, -100%)' }
+        style={{
+          position: 'fixed',
+          ...(isFloatingMode
+          ? safeFloatingAnchor
+            ? { left: safeFloatingAnchor.x + 8, top: safeFloatingAnchor.y - 8, transform: 'translate(0, -100%)' }
+            : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }
+          : safeBarPosition
+            ? { left: safeBarPosition.x, top: safeBarPosition.y - 60, transform: 'translate(-50%, -100%)' }
             : { left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }),
         zIndex: 1000,
         display: 'flex',

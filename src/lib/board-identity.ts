@@ -1,4 +1,5 @@
 import { Editor, TLFrameShape, TLShape, TLShapeId } from 'tldraw'
+import type { JsonObject } from '@tldraw/utils'
 
 interface ShapeMetaWithBoardId {
   boardId?: string
@@ -102,5 +103,41 @@ export function applyBoardLinkToShape(editor: Editor, shape: TLShape, boardId: s
       ...(shape.meta || {}),
       boardId,
     },
+  })
+}
+
+export function clearBoardLinkFromShape(editor: Editor, shape: TLShape) {
+  if (shape.type === 'ai-text' || shape.type === 'snapshot-card') {
+    const props = shape.props as { boardId?: string }
+    if (!props.boardId) return
+
+    editor.updateShape({
+      id: shape.id,
+      type: shape.type,
+      props: {
+        ...shape.props,
+        boardId: '',
+      },
+    })
+    return
+  }
+
+  const currentBoardId = getBoardIdFromMeta(shape)
+  if (!currentBoardId) return
+
+  const nextMeta = { ...(shape.meta || {}) } as JsonObject
+  delete nextMeta.boardId
+
+  editor.updateShape({
+    id: shape.id,
+    type: shape.type,
+    meta: nextMeta,
+  })
+}
+
+export function hasLiveBoardFrame(editor: Editor, boardId: string) {
+  return editor.getCurrentPageShapes().some((shape) => {
+    if (shape.type !== 'frame') return false
+    return getBoardIdFromMeta(shape) === boardId
   })
 }

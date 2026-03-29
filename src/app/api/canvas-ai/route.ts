@@ -35,6 +35,25 @@ function buildUserMessage(req: CanvasAIRequest): string {
     }
   }
 
+  if (context.selectedLinks?.links.length) {
+    parts.push(`Selected links: ${context.selectedLinks.links.length}`)
+    context.selectedLinks.links.slice(0, 5).forEach((link) => {
+      const descriptors = [
+        link.title || link.url,
+        link.shapeType,
+        link.previewImageUrl ? 'has preview image' : 'no preview image',
+        link.boardName ? `in board "${link.boardName}"` : undefined,
+      ].filter(Boolean)
+      parts.push(`  - ${descriptors.join(' · ')}`)
+    })
+  }
+
+  if (context.selectedShapes) {
+    parts.push(
+      `Selected non-image shapes: ${context.selectedShapes.count} (${context.selectedShapes.shapeTypes.join(', ')})`
+    )
+  }
+
   parts.push('')
   parts.push(`Canvas overview: ${context.canvasOverview.totalBoards} boards, ${context.canvasOverview.totalUngroupedImages} ungrouped images`)
   if (context.canvasOverview.boardNames.length > 0) {
@@ -150,12 +169,35 @@ async function handleChatStream(body: CanvasAIChatRequest) {
       if (origCtx.selectedBoards?.names) {
         originalContextNote += ` — boards: ${origCtx.selectedBoards.names.join(', ')}`
       }
+      if (origCtx.selectedLinks?.links?.length) {
+        const linkSummary = origCtx.selectedLinks.links
+          .slice(0, 3)
+          .map((link: { title?: string; url?: string }) => link.title || link.url)
+          .filter(Boolean)
+          .join(', ')
+        if (linkSummary) {
+          originalContextNote += ` — links: ${linkSummary}`
+        }
+      }
     }
   } catch {}
 
   let currentContextNote = ''
   if (body.currentContext?.selectionType && body.currentContext.selectionType !== 'none') {
     currentContextNote = `\nCurrent selection: ${body.currentContext.selectionType}`
+    if (body.currentContext.selectedLinks?.links.length) {
+      const linkSummary = body.currentContext.selectedLinks.links
+        .slice(0, 3)
+        .map((link) => link.title || link.url)
+        .filter(Boolean)
+        .join(', ')
+      if (linkSummary) {
+        currentContextNote += ` — links: ${linkSummary}`
+      }
+    }
+    if (body.currentContext.selectedShapes?.shapeTypes.length) {
+      currentContextNote += ` — shape types: ${body.currentContext.selectedShapes.shapeTypes.join(', ')}`
+    }
   }
 
   for (const msg of body.messages) {

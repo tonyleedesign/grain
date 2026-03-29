@@ -13,14 +13,16 @@ const MEDIUMS: { id: Medium; label: string; icon: typeof Monitor; description: s
 
 interface MediumPickerProps {
   onSubmit: (medium: Medium, useCase: string, sourceContext?: string, appealContext?: string) => void
-  imageCount: number
+  artifactCount: number
+  analyzableVisualCount: number
 }
 
-export function MediumPicker({ onSubmit, imageCount }: MediumPickerProps) {
+export function MediumPicker({ onSubmit, artifactCount, analyzableVisualCount }: MediumPickerProps) {
   const [selected, setSelected] = useState<Medium | null>(null)
   const [useCase, setUseCase] = useState('')
   const [sourceContext, setSourceContext] = useState('')
   const [appealContext, setAppealContext] = useState('')
+  const canExtract = Boolean(selected && useCase.trim() && analyzableVisualCount > 0)
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -29,7 +31,12 @@ export function MediumPicker({ onSubmit, imageCount }: MediumPickerProps) {
           What are you designing for?
         </p>
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          {imageCount} image{imageCount !== 1 ? 's' : ''} in this board
+          {artifactCount} item{artifactCount !== 1 ? 's' : ''} in this board
+        </p>
+        <p className="text-[10px] mt-1" style={{ color: 'var(--color-muted)' }}>
+          {analyzableVisualCount > 0
+            ? `${analyzableVisualCount} analyzable visual${analyzableVisualCount !== 1 ? 's' : ''} available for extraction`
+            : 'This board has no preview images to observe yet. Add images, or use links with preview images.'}
         </p>
       </div>
 
@@ -124,7 +131,7 @@ export function MediumPicker({ onSubmit, imageCount }: MediumPickerProps) {
       </div>
 
       <button
-        disabled={!selected || !useCase.trim()}
+        disabled={!canExtract}
         onClick={() => selected && onSubmit(selected, useCase, sourceContext.trim() || undefined, appealContext.trim() || undefined)}
         className="w-full py-2.5 text-[13px] font-medium rounded-md cursor-pointer transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
         style={{

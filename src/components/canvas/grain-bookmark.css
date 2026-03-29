@@ -1,0 +1,123 @@
+.grain-bookmark-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-family);
+  color: var(--color-text);
+}
+
+.grain-bookmark-card__image-link {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: color-mix(in srgb, var(--color-bg) 88%, white 12%);
+  overflow: hidden;
+  text-decoration: none;
+}
+
+.grain-bookmark-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.grain-bookmark-card__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-accent) 20%, transparent), transparent 52%),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-bg) 88%, white 12%), var(--color-surface));
+}
+
+.grain-bookmark-card__placeholder-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-surface) 72%, white 28%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, white 20%);
+}
+
+.grain-bookmark-card__placeholder-text {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.grain-bookmark-card__launch {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface) 84%, white 16%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 75%, white 25%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  z-index: 2;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  text-decoration: none;
+  pointer-events: all;
+}
+
+.grain-bookmark-card__meta {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 12px 11px;
+}
+
+.grain-bookmark-card__meta--compact {
+  gap: 0;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.grain-bookmark-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grain-bookmark-card__description {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

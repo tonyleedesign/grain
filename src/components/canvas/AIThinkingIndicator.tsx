@@ -5,6 +5,7 @@
 
 import { useEditor, useValue } from 'tldraw'
 import { AISparkleIcon } from './AISparkleIcon'
+import './ai-thinking-indicator.css'
 
 interface AIThinkingIndicatorProps {
   status: string // e.g. "Thinking...", "Grouping images...", "Writing..."
@@ -27,6 +28,7 @@ export function AIThinkingIndicator({ status }: AIThinkingIndicatorProps) {
 
   return (
     <div
+      className="grain-ai-thinking-indicator"
       style={{
         position: 'fixed',
         left: position.x,
@@ -47,16 +49,10 @@ export function AIThinkingIndicator({ status }: AIThinkingIndicatorProps) {
         pointerEvents: 'none',
       }}
     >
-      <div style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>
+      <div className="grain-ai-thinking-indicator__icon">
         <AISparkleIcon size={13} />
       </div>
-      {status}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-      `}</style>
+      <span className="grain-ai-thinking-indicator__text">{status}</span>
     </div>
   )
 }

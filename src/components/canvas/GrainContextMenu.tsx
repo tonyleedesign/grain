@@ -9,14 +9,17 @@ import {
   TldrawUiMenuGroup,
   TldrawUiMenuItem,
   TLUiContextMenuProps,
+  useEditor,
 } from 'tldraw'
 import { AISparkleIcon } from './AISparkleIcon'
 
 /**
  * Creates a context menu component that includes tldraw defaults + "Ask AI..."
  */
-export function createGrainContextMenu(onAskAI: () => void) {
+export function createGrainContextMenu(onAskAI: (anchor?: { x: number; y: number }) => void) {
   return function GrainContextMenu(props: TLUiContextMenuProps) {
+    const editor = useEditor()
+
     return (
       <DefaultContextMenu {...props}>
         <TldrawUiMenuGroup id="grain-ai">
@@ -24,7 +27,10 @@ export function createGrainContextMenu(onAskAI: () => void) {
             id="ask-ai"
             label="Ask AI..."
             icon={<AISparkleIcon size={14} />}
-            onSelect={() => onAskAI()}
+            onSelect={() => {
+              const screenPoint = editor.inputs.getCurrentScreenPoint()
+              onAskAI({ x: screenPoint.x, y: screenPoint.y })
+            }}
           />
         </TldrawUiMenuGroup>
         <DefaultContextMenuContent />

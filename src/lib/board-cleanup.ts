@@ -39,6 +39,7 @@ export function cleanupBoardArtifacts(editor: Editor, frameId: TLShapeId): numbe
 
   const boardId = getBoardIdFromMeta(frame)
   if (!boardId) return 0
+  const pageId = editor.getCurrentPageId()
 
   const frameProps = frame.props as { w?: number; h?: number }
   const artifactShapes = editor
@@ -69,9 +70,13 @@ export function cleanupBoardArtifacts(editor: Editor, frameId: TLShapeId): numbe
 
   const aiShapes = artifactShapes.filter((shape) => shape.type === 'ai-text')
   const snapshotShapes = artifactShapes.filter((shape) => shape.type === 'snapshot-card')
-  const linkShapes = artifactShapes.filter(
-    (shape) => shape.type === 'bookmark' || shape.type === 'embed'
-  )
+  const linkShapes = artifactShapes.filter((shape) => {
+    if (shape.type !== 'bookmark' && shape.type !== 'embed') return false
+    return shape.parentId !== frameId
+  })
+  const movableCount = aiShapes.length + snapshotShapes.length + linkShapes.length
+
+  if (movableCount === 0) return 0
 
   const baseX = frame.x + (frameProps.w || 0) + CLEANUP_OFFSET_X
   let nextAiY = frame.y
@@ -83,6 +88,7 @@ export function cleanupBoardArtifacts(editor: Editor, frameId: TLShapeId): numbe
     editor.updateShape({
       id: artifact.id,
       type: artifact.type,
+      parentId: pageId,
       x: baseX,
       y: nextAiY,
     })
@@ -100,6 +106,7 @@ export function cleanupBoardArtifacts(editor: Editor, frameId: TLShapeId): numbe
     editor.updateShape({
       id: artifact.id,
       type: artifact.type,
+      parentId: pageId,
       x: snapshotX,
       y: nextSnapshotY,
     })
@@ -115,6 +122,7 @@ export function cleanupBoardArtifacts(editor: Editor, frameId: TLShapeId): numbe
     editor.updateShape({
       id: artifact.id,
       type: artifact.type,
+      parentId: pageId,
       x: linkX,
       y: nextLinkY,
     })
@@ -122,5 +130,5 @@ export function cleanupBoardArtifacts(editor: Editor, frameId: TLShapeId): numbe
     nextLinkY += height + CLEANUP_GAP
   }
 
-  return artifactShapes.length
+  return movableCount
 }

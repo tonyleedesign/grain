@@ -43,8 +43,8 @@ async function runObservation(
   ]
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 2048,
     system: [
       {
         type: 'text',
@@ -93,7 +93,7 @@ async function runSynthesis(
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 6144,
+    max_tokens: 4096,
     system: [
       {
         type: 'text',
@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
       boardId: requestedBoardId,
       boardName,
       canvasId,
+      frameShapeId,
       medium,
       useCase,
       sourceContext,
@@ -136,6 +137,7 @@ export async function POST(request: NextRequest) {
       boardId?: string
       boardName: string
       canvasId: string
+      frameShapeId?: string
       medium: Medium
       useCase?: string
       sourceContext?: string
@@ -199,14 +201,32 @@ export async function POST(request: NextRequest) {
       fontShortlist
     )
 
-    // Resolve or create the board identity row first.
+    // Resolve or create the canonical board identity row first. Prefer
+    // frame-linked boards over name-only matches so a single canvas board
+    // cannot silently fan out into duplicate DB rows.
     let boardId: string | null = requestedBoardId || null
 
     let existingBoard: { id: string } | null = null
-    let boardLookupError: unknown = null
 
-    if (!boardId && boardName) {
-      const lookup = await supabaseServer
+    if (!boardId && frameShapeId) {
+      const { data: byFrame, error: byFrameError } = await supabaseServer
+        .from('boards')
+        .select('id')
+        .eq('canvas_id', canvasId)
+        .eq('frame_shape_id', frameShapeId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (byFrameError) {
+        console.error('Board lookup by frame error:', byFrameError)
+      }
+
+      existingBoard = byFrame
+    }
+
+    if (!existingBoard && !boardId && boardName) {
+      const { data: byName, error: byNameError } = await supabaseServer
         .from('boards')
         .select('id')
         .eq('canvas_id', canvasId)
@@ -215,22 +235,32 @@ export async function POST(request: NextRequest) {
         .limit(1)
         .maybeSingle()
 
-      existingBoard = lookup.data
-      boardLookupError = lookup.error
-    }
+      if (byNameError) {
+        console.error('Board lookup by name error:', byNameError)
+      }
 
-    if (boardLookupError) {
-      console.error('Board lookup error:', boardLookupError)
+      existingBoard = byName
     }
 
     if (existingBoard?.id) {
       boardId = existingBoard.id
+      if (frameShapeId) {
+        const { error: attachFrameError } = await supabaseServer
+          .from('boards')
+          .update({ frame_shape_id: frameShapeId })
+          .eq('id', boardId)
+
+        if (attachFrameError) {
+          console.error('Board frame attach error:', attachFrameError)
+        }
+      }
     } else {
       const { data: insertedBoard, error: insertBoardError } = await supabaseServer
         .from('boards')
         .insert({
           canvas_id: canvasId,
           name: boardName || 'Untitled',
+          frame_shape_id: frameShapeId || null,
         })
         .select('id')
         .single()
@@ -274,7 +304,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ medium, dna, observations })
+    return NextResponse.json({ boardId, medium, dna, observations })
   } catch (error) {
     console.error('Extract DNA error:', error)
     return NextResponse.json(
