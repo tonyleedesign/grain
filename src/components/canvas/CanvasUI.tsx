@@ -152,7 +152,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       setHoldingMode(nextGroupedBoards.length > 0 || nextGroupReviewCaptureIds.length > 0 ? 'group-review' : 'review')
     },
     onPlacementCancelled: () => {
-      setHoldingMode(groupedBoards.length > 0 ? 'group-review' : 'review')
+      setHoldingMode(groupedBoardsRef.current.length > 0 ? 'group-review' : 'review')
       setHoldingOpen(true)
     },
   })

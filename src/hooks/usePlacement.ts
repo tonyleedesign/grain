@@ -173,6 +173,13 @@ export function usePlacement(
     }
   }, [editor, finalizePlacement, placementOverlapFrameId, placementPendingAnchor])
 
+  const dismissOverlapPrompt = useCallback(() => {
+    setPlacementOverlapFrameId(null)
+    setPlacementPendingAnchor(null)
+  }, [])
+
+  const dismissError = useCallback(() => setPlacementError(null), [])
+
   return {
     placementPlan,
     placementError,
@@ -181,10 +188,7 @@ export function usePlacement(
     startPlacement,
     cancelPlacement,
     confirmOverlapPlacement,
-    dismissOverlapPrompt: useCallback(() => {
-      setPlacementOverlapFrameId(null)
-      setPlacementPendingAnchor(null)
-    }, []),
-    dismissError: useCallback(() => setPlacementError(null), []),
+    dismissOverlapPrompt,
+    dismissError,
   }
 }
