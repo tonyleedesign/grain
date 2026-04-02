@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditor, useValue, TLFrameShape, TLPageId, TLShapeId } from 'tldraw'
+import { useDNAPanel } from '@/hooks/useDNAPanel'
 import { Inbox, RotateCcw, Sparkles, X } from 'lucide-react'
 import { AIActionBar } from './AIActionBar'
 import { GrainSelectionToolbar } from './GrainSelectionToolbar'
@@ -35,12 +36,6 @@ import type {
 } from '@/types/holding-cell'
 import type { OrganizeArtifactInput, OrganizeArtifactPreview, OrganizePlanBoardPreview } from '@/types/organize'
 
-interface ActiveBoard {
-  boardId?: string
-  boardName: string
-  frameShapeId: TLShapeId
-}
-
 interface CanvasUIProps {
   canvasId: string
   accessToken?: string | null
@@ -67,14 +62,11 @@ function getHoldingCellStorageKey(canvasId: string) {
 export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const editor = useEditor()
   const { isDefaultTheme, resetTheme } = useTheme()
-  const [activeBoard, setActiveBoard] = useState<ActiveBoard | null>(null)
-  const [panelVisible, setPanelVisible] = useState(false)
+  const dnaPanel = useDNAPanel()
   const [toolbarAI, setToolbarAI] = useState(false)
   const [toolbarAIAnchor, setToolbarAIAnchor] = useState<{ x: number; y: number } | null>(null)
   const [aiBarVisible, setAiBarVisible] = useState(false)
   const [clusterAnchor, setClusterAnchor] = useState<{ left: number; top: number } | null>(null)
-  const [lastBoardName, setLastBoardName] = useState<string | null>(null)
-  const [dnaExtracting, setDnaExtracting] = useState(false)
   const [pendingCaptures, setPendingCaptures] = useState<PendingCapture[]>([])
   const [holdingSelectedIds, setHoldingSelectedIds] = useState<string[]>([])
   const [holdingSelectionClearedByUser, setHoldingSelectionClearedByUser] = useState(false)
@@ -112,7 +104,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const newCapturesForReviewIdsRef = useRef(newCapturesForReviewIds)
   const holdingDismissedThisSessionRef = useRef(holdingDismissedThisSession)
 
-  const boardToRender = activeBoard?.boardName || lastBoardName
   const storageKey = useMemo(() => getHoldingCellStorageKey(canvasId), [canvasId])
   const holdingArtifacts = useMemo(
     () => pendingCaptures.map((capture) => pendingCaptureToArtifact(capture)),
@@ -229,22 +220,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     const rect = button.getBoundingClientRect()
     setClusterAnchor({ left: rect.left + rect.width / 2, top: rect.top - 8 })
   }, [])
-
-  const handleExtractDna = useCallback(() => {
-    const selected = editor.getSelectedShapes()
-    const frame = selected.find((s) => s.type === 'frame')
-    if (!frame) return
-    const name = (frame.props as { name?: string }).name
-    if (!name) return
-
-    setActiveBoard({
-      boardId: getBoardIdFromMeta(frame),
-      boardName: name,
-      frameShapeId: frame.id,
-    })
-    setLastBoardName(name)
-    setPanelVisible(true)
-  }, [editor])
 
   const handleAskAI = useCallback(() => {
     setToolbarAIAnchor(null)
@@ -569,34 +544,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       removeChange()
     }
   }, [canvasId, editor])
-
-  const selectedShapes = useValue('selectedShapes', () => editor.getSelectedShapes(), [editor])
-
-  useEffect(() => {
-    if (selectedShapes.length === 1 && selectedShapes[0].type === 'frame') {
-      const frame = selectedShapes[0]
-      const name = (frame.props as { name?: string }).name
-      if (name) {
-        const animationFrame = window.requestAnimationFrame(() => {
-          setActiveBoard({
-            boardId: getBoardIdFromMeta(frame),
-            boardName: name,
-            frameShapeId: frame.id,
-          })
-          setLastBoardName(name)
-          setPanelVisible(true)
-        })
-        return () => window.cancelAnimationFrame(animationFrame)
-      }
-    }
-
-    if (selectedShapes.length === 0) {
-      const animationFrame = window.requestAnimationFrame(() => {
-        setPanelVisible(false)
-      })
-      return () => window.cancelAnimationFrame(animationFrame)
-    }
-  }, [selectedShapes])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -951,7 +898,7 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       {!aiBarVisible && <GrainSelectionToolbar canvasId={canvasId} onAskAI={handleAskAI} />}
       <AIActionBar
         canvasId={canvasId}
-        onExtractDna={handleExtractDna}
+        onExtractDna={dnaPanel.handleExtractDna}
         forceExpanded={toolbarAI}
         forceAnchor={toolbarAIAnchor}
         onForceExpandedConsumed={() => {
@@ -964,17 +911,17 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         <PillCluster anchor={clusterAnchor} items={clusterItems} />
       ) : null}
 
-      <BoardProcessingOverlay frameShapeId={activeBoard?.frameShapeId ?? null} active={dnaExtracting} label="Extracting DNA..." />
+      <BoardProcessingOverlay frameShapeId={dnaPanel.activeBoard?.frameShapeId ?? null} active={dnaPanel.dnaExtracting} label="Extracting DNA..." />
 
-      {boardToRender ? (
+      {dnaPanel.boardToRender ? (
         <DNAPanelV2
-          boardName={boardToRender}
-          boardId={activeBoard?.boardId}
-          frameShapeId={activeBoard?.frameShapeId}
+          boardName={dnaPanel.boardToRender}
+          boardId={dnaPanel.activeBoard?.boardId}
+          frameShapeId={dnaPanel.activeBoard?.frameShapeId}
           canvasId={canvasId}
-          isOpen={panelVisible}
-          onClose={() => setPanelVisible(false)}
-          onExtractionStateChange={setDnaExtracting}
+          isOpen={dnaPanel.panelVisible}
+          onClose={dnaPanel.closePanel}
+          onExtractionStateChange={dnaPanel.setDnaExtracting}
         />
       ) : null}
 
