@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useEditor, useValue, TLFrameShape, TLPageId, TLShapeId } from 'tldraw'
+import { useEditor, useValue, TLShapeId } from 'tldraw'
 import { useDNAPanel } from '@/hooks/useDNAPanel'
+import { usePlacement } from '@/hooks/usePlacement'
 import { Inbox, RotateCcw, Sparkles, X } from 'lucide-react'
 import { AIActionBar } from './AIActionBar'
 import { GrainSelectionToolbar } from './GrainSelectionToolbar'
@@ -14,11 +15,9 @@ import { useTheme } from '@/context/ThemeContext'
 import { useBoardIdentity } from '@/hooks/useBoardIdentity'
 import {
   buildPlacementPlan,
-  commitPlacementPlan,
-  findBoardOverlap,
   pendingCaptureToArtifact,
 } from '@/lib/capture-placement'
-import { applyOrganizePlan, requestArtifactOrganizePlan } from '@/lib/organizeImages'
+import { requestArtifactOrganizePlan } from '@/lib/organizeImages'
 import { supabase } from '@/lib/supabase'
 import type { PendingCapture } from '@/types/captures'
 import type {
@@ -77,12 +76,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   const [sessionNewCaptureIds, setSessionNewCaptureIds] = useState<string[]>([])
   const [holdingDismissedThisSession, setHoldingDismissedThisSession] = useState(false)
   const [organizeReviewOpen, setOrganizeReviewOpen] = useState(false)
-  const [placementPlan, setPlacementPlan] = useState<PlacementPlan | null>(null)
-  const [placementSource, setPlacementSource] = useState<'holding-cell' | 'organize' | null>(null)
-  const [organizePlacementBoards, setOrganizePlacementBoards] = useState<OrganizePlanBoardPreview[]>([])
-  const [placementOverlapFrameId, setPlacementOverlapFrameId] = useState<TLShapeId | null>(null)
-  const [placementPendingAnchor, setPlacementPendingAnchor] = useState<{ x: number; y: number } | null>(null)
-  const [placementError, setPlacementError] = useState<string | null>(null)
   const [organizeStatus, setOrganizeStatus] = useState<{ active: boolean; label: string }>({
     active: false,
     label: 'Organizing artifacts...',
@@ -103,6 +96,66 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     () => pendingCaptures.map((capture) => pendingCaptureToArtifact(capture)),
     [pendingCaptures]
   )
+
+  const getAuthHeaders = useCallback(async () => {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token ?? accessToken
+    if (!token) return null
+    return { Authorization: `Bearer ${token}` }
+  }, [accessToken])
+
+  const markCapturesApplied = useCallback(async (captureIds: string[]) => {
+    if (captureIds.length === 0) return
+    const authHeaders = await getAuthHeaders()
+    if (!authHeaders) throw new Error('Authentication required to mark captures applied')
+
+    const response = await fetch('/api/send-to-grain/pending', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+      },
+      body: JSON.stringify({ canvasId, captureIds }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '')
+      throw new Error(errorText || 'Failed to mark captures applied')
+    }
+  }, [canvasId, getAuthHeaders])
+
+  const placement = usePlacement(editor, canvasId, {
+    markCapturesApplied,
+    onPlacementFinalized: (appliedCaptureIds) => {
+      const appliedIds = new Set(appliedCaptureIds)
+      const nextGroupedBoards = groupedBoards
+        .map((board) => ({
+          ...board,
+          artifacts: board.artifacts.filter((artifact) => !appliedIds.has(artifact.id)),
+        }))
+        .filter((board) => board.artifacts.length > 0)
+      const validBoardSelectionIds = new Set(nextGroupedBoards.map((board) => `board:${board.id}`))
+      const nextGroupReviewCaptureIds = groupReviewCaptureIds.filter((id) => !appliedIds.has(id))
+      const nextGroupedSnapshotSelectedIds = groupedSnapshotSelectedIds.filter(
+        (id) => !appliedIds.has(id) && (!id.startsWith('board:') || validBoardSelectionIds.has(id))
+      )
+
+      setPendingCaptures((current) => current.filter((capture) => !appliedIds.has(capture.id)))
+      setGroupedBoards(nextGroupedBoards)
+      setGroupReviewCaptureIds(nextGroupReviewCaptureIds)
+      setGroupedSnapshotSelectedIds(nextGroupedSnapshotSelectedIds)
+      setHoldingSelectedIds((current) =>
+        current.filter((id) => !appliedIds.has(id) && (!id.startsWith('board:') || validBoardSelectionIds.has(id)))
+      )
+      setHoldingSelectionClearedByUser(false)
+      setNewCapturesForReviewIds((current) => current.filter((id) => !appliedIds.has(id)))
+      setHoldingMode(nextGroupedBoards.length > 0 || nextGroupReviewCaptureIds.length > 0 ? 'group-review' : 'review')
+    },
+    onPlacementCancelled: () => {
+      setHoldingMode(groupedBoards.length > 0 ? 'group-review' : 'review')
+      setHoldingOpen(true)
+    },
+  })
 
   const clusterItems = useMemo(() => {
     const items: Array<
@@ -136,39 +189,12 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       items.push({ id: 'organize-status', type: 'status', label: organizeStatus.label, icon: 'sparkles' })
     }
 
-    if (placementPlan) {
+    if (placement.placementPlan) {
       items.push({ id: 'placement-status', type: 'status', label: 'Click to place / Esc to cancel', icon: 'inbox' })
     }
 
     return items
-  }, [isDefaultTheme, organizeStatus.active, organizeStatus.label, pendingCaptures.length, placementPlan, resetTheme, newCapturesForReviewIds])
-
-  const getAuthHeaders = useCallback(async () => {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token ?? accessToken
-    if (!token) return null
-    return { Authorization: `Bearer ${token}` }
-  }, [accessToken])
-
-  const markCapturesApplied = useCallback(async (captureIds: string[]) => {
-    if (captureIds.length === 0) return
-    const authHeaders = await getAuthHeaders()
-    if (!authHeaders) throw new Error('Authentication required to mark captures applied')
-
-    const response = await fetch('/api/send-to-grain/pending', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders,
-      },
-      body: JSON.stringify({ canvasId, captureIds }),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '')
-      throw new Error(errorText || 'Failed to mark captures applied')
-    }
-  }, [canvasId, getAuthHeaders])
+  }, [isDefaultTheme, organizeStatus.active, organizeStatus.label, pendingCaptures.length, placement.placementPlan, resetTheme, newCapturesForReviewIds])
 
   const deletePendingCapture = useCallback(async (captureId: string) => {
     const authHeaders = await getAuthHeaders()
@@ -285,81 +311,10 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     const selectedArtifacts = holdingArtifacts.filter((artifact) => holdingSelectedIds.includes(artifact.id))
     if (selectedBoards.length === 0 && selectedArtifacts.length === 0) return
 
-    setPlacementPlan(buildPlacementPlan({ artifacts: selectedArtifacts, boards: selectedBoards }))
-    setPlacementSource('holding-cell')
-    setOrganizePlacementBoards([])
+    placement.startPlacement(buildPlacementPlan({ artifacts: selectedArtifacts, boards: selectedBoards }), 'holding-cell')
     setHoldingOpen(false)
-    setPlacementError(null)
     setHoldingMode('placement')
-  }, [groupedBoards, holdingArtifacts, holdingSelectedIds])
-
-  const finalizePlacement = useCallback(async (anchor: { x: number; y: number }, targetBoardFrame: TLFrameShape | null) => {
-    if (!placementPlan) return
-
-    if (placementSource === 'organize') {
-      await applyOrganizePlan(editor, canvasId, organizePlacementBoards, {
-        anchor,
-        plan: placementPlan,
-        preserveDimensions: true,
-      })
-      setPlacementPlan(null)
-      setPlacementSource(null)
-      setOrganizePlacementBoards([])
-      setPlacementOverlapFrameId(null)
-      setPlacementPendingAnchor(null)
-      setPlacementError(null)
-      window.dispatchEvent(
-        new CustomEvent('grain:placement-finished', {
-          detail: {
-            source: 'organize',
-            outcome: 'committed',
-          },
-        })
-      )
-      return
-    }
-
-    const result = await commitPlacementPlan({
-      editor,
-      canvasId,
-      pageId: editor.getCurrentPageId() as TLPageId,
-      anchor,
-      plan: placementPlan,
-      targetBoardFrame,
-    })
-
-    await markCapturesApplied(result.captureIds)
-
-    const appliedIds = new Set(result.captureIds)
-    const nextGroupedBoards = groupedBoards
-      .map((board) => ({
-        ...board,
-        artifacts: board.artifacts.filter((artifact) => !appliedIds.has(artifact.id)),
-      }))
-      .filter((board) => board.artifacts.length > 0)
-    const validBoardSelectionIds = new Set(nextGroupedBoards.map((board) => `board:${board.id}`))
-    const nextGroupReviewCaptureIds = groupReviewCaptureIds.filter((id) => !appliedIds.has(id))
-    const nextGroupedSnapshotSelectedIds = groupedSnapshotSelectedIds.filter(
-      (id) => !appliedIds.has(id) && (!id.startsWith('board:') || validBoardSelectionIds.has(id))
-    )
-
-    setPendingCaptures((current) => current.filter((capture) => !appliedIds.has(capture.id)))
-    setGroupedBoards(nextGroupedBoards)
-    setGroupReviewCaptureIds(nextGroupReviewCaptureIds)
-    setGroupedSnapshotSelectedIds(nextGroupedSnapshotSelectedIds)
-    setHoldingSelectedIds((current) =>
-      current.filter((id) => !appliedIds.has(id) && (!id.startsWith('board:') || validBoardSelectionIds.has(id)))
-    )
-    setHoldingSelectionClearedByUser(false)
-    setPlacementPlan(null)
-    setPlacementSource(null)
-    setOrganizePlacementBoards([])
-    setPlacementOverlapFrameId(null)
-    setPlacementPendingAnchor(null)
-    setPlacementError(null)
-    setNewCapturesForReviewIds((current) => current.filter((id) => !appliedIds.has(id)))
-    setHoldingMode(nextGroupedBoards.length > 0 || nextGroupReviewCaptureIds.length > 0 ? 'group-review' : 'review')
-  }, [canvasId, editor, groupReviewCaptureIds, groupedBoards, groupedSnapshotSelectedIds, markCapturesApplied, organizePlacementBoards, placementPlan, placementSource])
+  }, [groupedBoards, holdingArtifacts, holdingSelectedIds, placement])
 
   useEffect(() => {
     const handleAskAI = (event: Event) => {
@@ -400,17 +355,12 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       const detail = (event as CustomEvent<PlacementStartDetail>).detail
       if (!detail || detail.source !== 'organize' || detail.canvasId !== canvasId) return
 
-      setPlacementPlan(detail.plan)
-      setPlacementSource('organize')
-      setOrganizePlacementBoards(detail.boards)
-      setPlacementOverlapFrameId(null)
-      setPlacementPendingAnchor(null)
-      setPlacementError(null)
+      placement.startPlacement(detail.plan, 'organize', detail.boards)
     }
 
     window.addEventListener('grain:start-placement', handlePlacementStart)
     return () => window.removeEventListener('grain:start-placement', handlePlacementStart)
-  }, [canvasId])
+  }, [canvasId, placement.startPlacement])
 
   useEffect(() => {
     if (clusterItems.length === 0) {
@@ -708,70 +658,6 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     }
   }, [canvasId, holdingArtifacts, holdingSelectedIds, isGroupingHolding])
 
-  useEffect(() => {
-    if (!placementPlan) return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setPlacementPlan(null)
-        setPlacementSource(null)
-        setOrganizePlacementBoards([])
-        setPlacementOverlapFrameId(null)
-        setPlacementPendingAnchor(null)
-        setPlacementError(null)
-        if (placementSource === 'organize') {
-          window.dispatchEvent(
-            new CustomEvent('grain:placement-finished', {
-              detail: {
-                source: 'organize',
-                outcome: 'cancelled',
-              },
-            })
-          )
-        }
-        if (placementSource !== 'organize') {
-          setHoldingMode(groupedBoards.length > 0 ? 'group-review' : 'review')
-          setHoldingOpen(true)
-        }
-      }
-    }
-
-    const handlePointerDown = async (event: PointerEvent) => {
-      const target = event.target as HTMLElement | null
-      if (!target) return
-      if (target.closest('.tlui-layout')) return
-      if (target.closest('.grain-dna-panel')) return
-
-      const anchor = editor.inputs.getCurrentPagePoint()
-      const overlapFrame = findBoardOverlap(editor, editor.getCurrentPageId() as TLPageId, anchor, placementPlan)
-
-      if (overlapFrame) {
-        if (placementPlan.containsBoards) {
-          setPlacementError("Boards can't be placed inside other boards.")
-          return
-        }
-
-        setPlacementPendingAnchor(anchor)
-        setPlacementOverlapFrameId(overlapFrame.id)
-        return
-      }
-
-      try {
-        await finalizePlacement(anchor, null)
-      } catch (error) {
-        setPlacementError(error instanceof Error ? error.message : 'Failed to place captures')
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    document.addEventListener('pointerdown', handlePointerDown, { capture: true })
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      document.removeEventListener('pointerdown', handlePointerDown, { capture: true })
-    }
-  }, [editor, finalizePlacement, groupedBoards.length, placementPlan, placementSource])
-
   const groupedArtifactIds = useMemo(
     () => new Set(groupedBoards.flatMap((board) => board.artifacts.map((artifact) => artifact.id))),
     [groupedBoards]
@@ -860,41 +746,25 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         } : null}
       />
 
-      <PlacementPreviewOverlay active={Boolean(placementPlan)} plan={placementPlan} />
+      <PlacementPreviewOverlay active={Boolean(placement.placementPlan)} plan={placement.placementPlan} />
 
       <PlacementDecisionModal
-        open={Boolean(placementOverlapFrameId && placementPendingAnchor)}
+        open={Boolean(placement.placementOverlapFrameId && placement.placementPendingAnchor)}
         title="Place inside this board?"
         description="Clicking Continue will place all selected captures inside the target board frame."
         confirmLabel="Continue"
-        onClose={() => {
-          setPlacementOverlapFrameId(null)
-          setPlacementPendingAnchor(null)
-        }}
-        onConfirm={async () => {
-          if (!placementOverlapFrameId || !placementPendingAnchor) return
-          const frame = editor.getShape(placementOverlapFrameId) as TLFrameShape | undefined
-          if (!frame) {
-            setPlacementOverlapFrameId(null)
-            setPlacementPendingAnchor(null)
-            return
-          }
-          try {
-            await finalizePlacement(placementPendingAnchor, frame)
-          } catch (error) {
-            setPlacementError(error instanceof Error ? error.message : 'Failed to place captures')
-          }
-        }}
+        onClose={placement.dismissOverlapPrompt}
+        onConfirm={placement.confirmOverlapPlacement}
       />
 
       <PlacementDecisionModal
-        open={Boolean(placementError)}
+        open={Boolean(placement.placementError)}
         title="Placement blocked"
-        description={placementError || ''}
+        description={placement.placementError || ''}
         confirmLabel="Okay"
         hideCancel
-        onClose={() => setPlacementError(null)}
-        onConfirm={() => setPlacementError(null)}
+        onClose={placement.dismissError}
+        onConfirm={placement.dismissError}
       />
     </>
   )
