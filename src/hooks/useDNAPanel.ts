@@ -15,7 +15,6 @@ export interface UseDNAPanelReturn {
   panelVisible: boolean
   boardToRender: string | null
   dnaExtracting: boolean
-  openPanel: (board: ActiveBoard) => void
   closePanel: () => void
   setDnaExtracting: (extracting: boolean) => void
   handleExtractDna: () => void
@@ -29,12 +28,6 @@ export function useDNAPanel(): UseDNAPanelReturn {
   const [dnaExtracting, setDnaExtracting] = useState(false)
 
   const boardToRender = activeBoard?.boardName || lastBoardName
-
-  const openPanel = useCallback((board: ActiveBoard) => {
-    setActiveBoard(board)
-    setLastBoardName(board.boardName)
-    setPanelVisible(true)
-  }, [])
 
   const closePanel = useCallback(() => {
     setPanelVisible(false)
@@ -89,7 +82,6 @@ export function useDNAPanel(): UseDNAPanelReturn {
     panelVisible,
     boardToRender,
     dnaExtracting,
-    openPanel,
     closePanel,
     setDnaExtracting,
     handleExtractDna,
