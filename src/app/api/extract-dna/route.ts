@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { requireCanvasAccess } from '@/lib/server-auth'
 import { Medium } from '@/types/dna'
 import { supabaseServer } from '@/lib/supabase-server'
 import {
@@ -154,6 +155,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    const authResponse = await requireCanvasAccess(request, canvasId)
+    if (authResponse) return authResponse
 
     // Pass 1: Observe (skip if observations provided — regeneration path)
     let observations: string

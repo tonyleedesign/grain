@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import type { OrganizeArtifactInput, OrganizePlanResponse } from '@/types/organize'
+import { getAuthenticatedUser } from '@/lib/server-auth'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -145,6 +146,9 @@ async function requestOrganizePlanFromAnthropic(artifacts: OrganizeArtifactInput
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { artifacts } = (await request.json()) as {
       artifacts: OrganizeArtifactInput[]
     }

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import type { CanvasAIRequest, CanvasAIResponse, CanvasAIToolCall, CanvasAIChatRequest } from '@/types/canvas-ai'
 import { CANVAS_AI_SYSTEM, CANVAS_AI_TOOLS } from './tools'
+import { requireCanvasAccess } from '@/lib/server-auth'
 
 export const maxDuration = 30
 
@@ -282,6 +283,14 @@ async function handleChatStream(body: CanvasAIChatRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+
+    const canvasId = body.canvasId as string | undefined
+    if (!canvasId) {
+      return NextResponse.json({ error: 'canvasId is required' }, { status: 400 })
+    }
+
+    const authResponse = await requireCanvasAccess(request, canvasId)
+    if (authResponse) return authResponse
 
     // Multi-turn chat request
     if (body.messages && Array.isArray(body.messages)) {

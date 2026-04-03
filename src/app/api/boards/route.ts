@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { requireCanvasAccess } from '@/lib/server-auth'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -17,6 +18,11 @@ export async function GET(request: NextRequest) {
       { error: 'boardId or (frameShapeId and canvasId) or (name and canvasId) required' },
       { status: 400 }
     )
+  }
+
+  if (canvasId) {
+    const authResponse = await requireCanvasAccess(request, canvasId)
+    if (authResponse) return authResponse
   }
 
   type BoardRow = Record<string, unknown> & {
@@ -215,6 +221,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'name and canvasId required' }, { status: 400 })
   }
 
+  const authResponse = await requireCanvasAccess(request, canvasId)
+  if (authResponse) return authResponse
+
   if (frameShapeId) {
     const { data: existingByFrame } = await supabaseServer
       .from('boards')
@@ -259,6 +268,9 @@ export async function PATCH(request: NextRequest) {
       { status: 400 }
     )
   }
+
+  const authResponse = await requireCanvasAccess(request, canvasId)
+  if (authResponse) return authResponse
 
   let query = supabaseServer.from('boards').update({
     ...(newName ? { name: newName } : {}),
