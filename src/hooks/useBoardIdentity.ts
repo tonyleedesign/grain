@@ -38,8 +38,13 @@ export function useBoardIdentity(
       relinkingFramesRef.current.add(shapeId)
 
       try {
+        const authHeaders = getAuthHeaders ? await getAuthHeaders() : null
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (authHeaders) Object.assign(headers, authHeaders)
+
         const boardResponse = await fetch(
-          `/api/boards?${new URLSearchParams({ boardId, canvasId }).toString()}`
+          `/api/boards?${new URLSearchParams({ boardId, canvasId }).toString()}`,
+          { headers }
         )
 
         if (boardResponse.ok) {
@@ -52,7 +57,7 @@ export function useBoardIdentity(
 
         const cloneResponse = await fetch('/api/boards/clone', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             sourceBoardId: boardId,
             canvasId,
@@ -121,6 +126,5 @@ export function useBoardIdentity(
       removeCreate()
       removeChange()
     }
-  }, [canvasId, editor])
-  // Note: getAuthHeaders intentionally omitted from deps — it's not used in the effect yet
+  }, [canvasId, editor, getAuthHeaders])
 }

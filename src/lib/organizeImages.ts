@@ -127,13 +127,14 @@ function buildOrganizeInput(artifacts: OrganizeArtifactPreview[]): OrganizeArtif
 export async function requestArtifactOrganizePlan(
   artifacts: OrganizeArtifactInput[],
   canvasId: string,
-  artifactPreviewMap: Map<string, OrganizeArtifactPreview>
+  artifactPreviewMap: Map<string, OrganizeArtifactPreview>,
+  authHeaders?: Record<string, string> | null
 ): Promise<OrganizePlanBoardPreview[] | null> {
   if (artifacts.length === 0) return null
 
   const response = await fetch('/api/organize', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(authHeaders || {}) },
     body: JSON.stringify({ artifacts, canvasId }),
     signal: AbortSignal.timeout(45000),
   })
@@ -155,12 +156,13 @@ export async function requestArtifactOrganizePlan(
 
 export async function requestOrganizePlan(
   editor: Editor,
-  canvasId: string
+  canvasId: string,
+  authHeaders?: Record<string, string> | null
 ): Promise<OrganizePlanBoardPreview[] | null> {
   const artifacts = getUngroupedOrganizeArtifactPreviews(editor)
   if (artifacts.length === 0) return null
   const artifactMap = new Map(artifacts.map((artifact) => [artifact.id, artifact]))
-  return requestArtifactOrganizePlan(buildOrganizeInput(artifacts), canvasId, artifactMap)
+  return requestArtifactOrganizePlan(buildOrganizeInput(artifacts), canvasId, artifactMap, authHeaders)
 }
 
 function getLayoutDimensions(artifact: OrganizeArtifactPreview) {

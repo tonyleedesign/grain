@@ -39,6 +39,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type React from 'react'
 import { LoaderCircle } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import { buildPlacementPlan } from '@/lib/capture-placement'
 import { getUngroupedOrganizeArtifacts, requestOrganizePlan } from '@/lib/organizeImages'
 import { OrganizeReviewModal } from './OrganizeReviewModal'
@@ -97,7 +98,11 @@ function OrganizeToolbarButton({ canvasId, callbacksRef }: OrganizeToolbarButton
 
     setIsOrganizing(true)
     try {
-      const plan = await requestOrganizePlan(editor, canvasId)
+      const { data: sessionData } = await supabase.auth.getSession()
+      const authHeaders = sessionData.session?.access_token
+        ? { Authorization: `Bearer ${sessionData.session.access_token}` }
+        : null
+      const plan = await requestOrganizePlan(editor, canvasId, authHeaders)
 
       if (!plan?.length) {
         addToast({

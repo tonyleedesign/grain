@@ -5,6 +5,7 @@
 // Reference: grain-prd.md Section 11.3
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { supabase } from '@/lib/supabase'
 import { createPortal } from 'react-dom'
 import { useEditor, createShapeId, TLShapeId, TldrawUiIcon } from 'tldraw'
 import { motion } from 'framer-motion'
@@ -33,6 +34,7 @@ interface DNAPanelV2Props {
   isOpen: boolean
   onClose: () => void
   onExtractionStateChange?: (isExtracting: boolean) => void
+  accessToken?: string | null
 }
 
 export function DNAPanelV2({
@@ -43,6 +45,7 @@ export function DNAPanelV2({
   isOpen,
   onClose,
   onExtractionStateChange,
+  accessToken,
 }: DNAPanelV2Props) {
   const editor = useEditor()
   const { setTheme, resetTheme, isDefaultTheme } = useTheme()
@@ -67,6 +70,13 @@ export function DNAPanelV2({
   const [loadedBoardKey, setLoadedBoardKey] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token ?? accessToken ?? null
+    if (!token) return {}
+    return { Authorization: `Bearer ${token}` }
+  }, [accessToken])
+
   const syncResolvedBoard = useCallback(
     (resolvedBoardId: string | null | undefined) => {
       if (!resolvedBoardId) return
@@ -86,13 +96,15 @@ export function DNAPanelV2({
         })
       }
 
-      fetch('/api/boards', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ canvasId, boardId: resolvedBoardId, frameShapeId }),
+      getAuthHeaders().then((authHeaders) => {
+        fetch('/api/boards', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ canvasId, boardId: resolvedBoardId, frameShapeId }),
+        }).catch(() => {})
       }).catch(() => {})
     },
-    [canvasId, editor, frameShapeId]
+    [canvasId, editor, frameShapeId, getAuthHeaders]
   )
 
   useEffect(() => {
@@ -169,12 +181,13 @@ export function DNAPanelV2({
 
     const loadBoard = async () => {
       let resolvedBoardId = initialBoardId || null
+      const authHeaders = await getAuthHeaders()
 
       if (frameShapeId) {
         try {
           const repairResponse = await fetch('/api/boards/repair', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
             body: JSON.stringify({
               canvasId,
               boardId: resolvedBoardId,
@@ -197,7 +210,9 @@ export function DNAPanelV2({
       if (frameShapeId) params.set('frameShapeId', frameShapeId)
       params.set('name', boardName)
 
-      fetch(`/api/boards?${params.toString()}`)
+      fetch(`/api/boards?${params.toString()}`, {
+        headers: { ...authHeaders },
+      })
         .then((res) => {
           if (!res.ok) throw new Error('Board not found')
           return res.json()
@@ -218,7 +233,7 @@ export function DNAPanelV2({
             if (data.frame_shape_id !== frameShapeId) {
               fetch('/api/boards', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({ canvasId, boardId: data.id, frameShapeId }),
               }).catch(() => {})
             }
@@ -227,7 +242,7 @@ export function DNAPanelV2({
           if (data.name !== boardName) {
             fetch('/api/boards', {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', ...authHeaders },
               body: JSON.stringify({ canvasId, boardId: data.id, newName: boardName }),
             }).catch(() => {})
           }
@@ -245,7 +260,9 @@ export function DNAPanelV2({
           }
 
           if (data.id) {
-            fetch(`/api/dna-feedback?boardId=${data.id}`)
+            fetch(`/api/dna-feedback?boardId=${data.id}`, {
+              headers: { ...authHeaders },
+            })
               .then((res) => res.json())
               .then((fb) => {
                 if (fb?.what_was_off) setFeedback(fb.what_was_off)
@@ -259,7 +276,7 @@ export function DNAPanelV2({
     }
 
     void loadBoard()
-  }, [boardName, canvasId, editor, frameShapeId, initialBoardId, loadedBoardKey])
+  }, [boardName, canvasId, editor, frameShapeId, getAuthHeaders, initialBoardId, loadedBoardKey])
 
   const extractDNA = useCallback(
     async (selectedMedium: Medium, selectedUseCase: string, selectedSourceContext?: string, selectedAppealContext?: string) => {
@@ -280,7 +297,7 @@ export function DNAPanelV2({
       try {
         const response = await fetch('/api/extract-dna', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...await getAuthHeaders() },
           body: JSON.stringify({
             boardId,
             boardName,
@@ -315,7 +332,7 @@ export function DNAPanelV2({
         setState('error')
       }
     },
-    [boardId, boardName, canvasId, frameShapeId, imageUrls, feedback, syncResolvedBoard]
+    [boardId, boardName, canvasId, frameShapeId, getAuthHeaders, imageUrls, feedback, syncResolvedBoard]
   )
 
   const handleRegenerate = useCallback((reason?: string) => {
@@ -334,25 +351,26 @@ export function DNAPanelV2({
 
     const feedbackText = reason || feedback || undefined
 
-    fetch('/api/extract-dna', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        boardId,
-        boardName,
-        canvasId,
-        frameShapeId,
-        medium,
-        useCase: useCase || undefined,
-        sourceContext: sourceContext || undefined,
-        appealContext: appealContext || undefined,
-        imageUrls,
-        observations: observations || undefined,
-        feedback: feedbackText,
-        previousDna: feedbackText ? dna : undefined,
-      }),
-      signal: AbortSignal.timeout(120000),
-    })
+    getAuthHeaders().then((authHeaders) => {
+      fetch('/api/extract-dna', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({
+          boardId,
+          boardName,
+          canvasId,
+          frameShapeId,
+          medium,
+          useCase: useCase || undefined,
+          sourceContext: sourceContext || undefined,
+          appealContext: appealContext || undefined,
+          imageUrls,
+          observations: observations || undefined,
+          feedback: feedbackText,
+          previousDna: feedbackText ? dna : undefined,
+        }),
+        signal: AbortSignal.timeout(120000),
+      })
       .then((res) => {
         if (!res.ok) return res.json().then((err) => { throw new Error(err.error || 'Extraction failed') })
         return res.json()
@@ -368,7 +386,10 @@ export function DNAPanelV2({
         setError(err instanceof Error ? err.message : 'Extraction failed')
         setState('error')
       })
-  }, [boardId, medium, boardName, canvasId, frameShapeId, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna, syncResolvedBoard])
+    }).catch(() => {
+      setState('error')
+    })
+  }, [boardId, medium, boardName, canvasId, frameShapeId, getAuthHeaders, useCase, sourceContext, appealContext, observations, imageUrls, feedback, dna, syncResolvedBoard])
 
   const handleDetach = useCallback(() => {
     if (!dna || !medium || !boardName) return

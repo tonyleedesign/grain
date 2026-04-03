@@ -467,7 +467,8 @@ export function useHoldingCell(canvasId: string, accessToken?: string | null): U
         position_y: artifact.position_y,
       }))
 
-      const plan = await requestArtifactOrganizePlan(input, canvasId, previewMap)
+      const authHeaders = await getAuthHeaders()
+      const plan = await requestArtifactOrganizePlan(input, canvasId, previewMap, authHeaders)
       if (!plan?.length) return
 
       const groupedArtifactIds = new Set(plan.flatMap((board) => board.artifacts.map((artifact) => artifact.id)))

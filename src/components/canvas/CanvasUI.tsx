@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditor, useValue, TLShapeId } from 'tldraw'
+import { supabase } from '@/lib/supabase'
 import { useDNAPanel } from '@/hooks/useDNAPanel'
 import { usePlacement } from '@/hooks/usePlacement'
 import { useHoldingCell } from '@/hooks/useHoldingCell'
@@ -33,7 +34,15 @@ export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps)
   const editor = useEditor()
   const { isDefaultTheme, resetTheme } = useTheme()
   const dnaPanel = useDNAPanel()
-  useBoardIdentity(editor, canvasId)
+
+  const getAuthHeadersForHooks = useCallback(async () => {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token ?? accessToken ?? null
+    if (!token) return null
+    return { Authorization: `Bearer ${token}` }
+  }, [accessToken])
+
+  useBoardIdentity(editor, canvasId, getAuthHeadersForHooks)
   const holdingCell = useHoldingCell(canvasId, accessToken)
   const [toolbarAI, setToolbarAI] = useState(false)
   const [toolbarAIAnchor, setToolbarAIAnchor] = useState<{ x: number; y: number } | null>(null)
@@ -190,6 +199,7 @@ export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps)
           isOpen={dnaPanel.panelVisible}
           onClose={dnaPanel.closePanel}
           onExtractionStateChange={dnaPanel.setDnaExtracting}
+          accessToken={accessToken}
         />
       ) : null}
 
