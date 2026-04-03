@@ -37,14 +37,17 @@ import {
   XBoxToolbarItem,
 } from 'tldraw'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type React from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { buildPlacementPlan } from '@/lib/capture-placement'
 import { getUngroupedOrganizeArtifacts, requestOrganizePlan } from '@/lib/organizeImages'
 import { OrganizeReviewModal } from './OrganizeReviewModal'
 import type { OrganizePlanBoardPreview, OrganizePlanDraft } from '@/types/organize'
+import type { CanvasCallbacks } from '@/types/canvas-callbacks'
 
-interface GrainToolbarProps {
+interface OrganizeToolbarButtonProps {
   canvasId: string
+  callbacksRef: React.MutableRefObject<CanvasCallbacks>
 }
 
 const ORGANIZE_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 6
@@ -53,7 +56,7 @@ function getOrganizeDraftStorageKey(canvasId: string, pageId: string) {
   return `grain:organize-draft:${canvasId}:${pageId}`
 }
 
-function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
+function OrganizeToolbarButton({ canvasId, callbacksRef }: OrganizeToolbarButtonProps) {
   const editor = useEditor()
   const { addToast } = useToasts()
   const [isOrganizing, setIsOrganizing] = useState(false)
@@ -138,21 +141,12 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
       setIsPlacing(true)
       try {
         setReviewOpen(false)
-        window.dispatchEvent(
-          new CustomEvent('grain:start-placement', {
-            detail: {
-              source: 'organize',
-              canvasId,
-              plan,
-              boards: selectedBoards,
-            },
-          })
-        )
+        callbacksRef.current.onStartPlacement?.(plan, selectedBoards, canvasId)
       } catch {
         setIsPlacing(false)
       }
     },
-    [canvasId, proposals]
+    [callbacksRef, canvasId, proposals]
   )
 
   const handleRejectPlan = useCallback(() => {
@@ -170,26 +164,23 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
   }, [addToast, isPlacing])
 
   useEffect(() => {
-    const handlePlacementFinished = (event: Event) => {
-      const detail = (event as CustomEvent<{ source?: string; outcome?: 'committed' | 'cancelled' }>).detail
-      if (detail?.source !== 'organize') return
-
+    callbacksRef.current.onPlacementFinished = (outcome) => {
       setIsPlacing(false)
-      if (detail.outcome === 'committed') {
+      if (outcome === 'committed') {
         setProposals([])
         setSelectedProposalIds([])
         setReviewOpen(false)
         return
       }
-
-      if (detail.outcome === 'cancelled') {
+      if (outcome === 'cancelled') {
         setReviewOpen(true)
       }
     }
 
-    window.addEventListener('grain:placement-finished', handlePlacementFinished)
-    return () => window.removeEventListener('grain:placement-finished', handlePlacementFinished)
-  }, [])
+    return () => {
+      callbacksRef.current.onPlacementFinished = null
+    }
+  }, [callbacksRef])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -258,42 +249,18 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
   }, [canvasId, currentPageId, draftHydrated, draftStorageKey, proposals, reviewOpen, selectedProposalIds])
 
   useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent('grain:organize-status', {
-        detail: {
-          active: isOrganizing,
-          label: 'Organizing artifacts...',
-        },
-      })
-    )
-
+    callbacksRef.current.onOrganizeStatusChange?.(isOrganizing, 'Organizing artifacts...')
     return () => {
-      window.dispatchEvent(
-        new CustomEvent('grain:organize-status', {
-          detail: {
-            active: false,
-            label: 'Organizing artifacts...',
-          },
-        })
-      )
+      callbacksRef.current.onOrganizeStatusChange?.(false, 'Organizing artifacts...')
     }
-  }, [isOrganizing])
+  }, [callbacksRef, isOrganizing])
 
   useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent('grain:organize-review-open', {
-        detail: { open: reviewOpen },
-      })
-    )
-
+    callbacksRef.current.onOrganizeReviewOpenChange?.(reviewOpen)
     return () => {
-      window.dispatchEvent(
-        new CustomEvent('grain:organize-review-open', {
-          detail: { open: false },
-        })
-      )
+      callbacksRef.current.onOrganizeReviewOpenChange?.(false)
     }
-  }, [reviewOpen])
+  }, [callbacksRef, reviewOpen])
 
   return (
     <>
@@ -342,7 +309,7 @@ function OrganizeToolbarButton({ canvasId }: GrainToolbarProps) {
   )
 }
 
-export function createGrainToolbar(canvasId: string) {
+export function createGrainToolbar(canvasId: string, callbacksRef: React.MutableRefObject<CanvasCallbacks>) {
   return function GrainToolbar() {
     return (
       <DefaultToolbar>
@@ -351,7 +318,7 @@ export function createGrainToolbar(canvasId: string) {
         <DrawToolbarItem />
         <TextToolbarItem />
 
-        <OrganizeToolbarButton canvasId={canvasId} />
+        <OrganizeToolbarButton canvasId={canvasId} callbacksRef={callbacksRef} />
 
         <AssetToolbarItem />
         <NoteToolbarItem />

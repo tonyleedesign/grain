@@ -20,26 +20,16 @@ import {
 import type {
   PlacementPlan,
 } from '@/types/holding-cell'
-import type { OrganizePlanBoardPreview } from '@/types/organize'
+import type { CanvasCallbacks } from '@/types/canvas-callbacks'
+import type React from 'react'
 
 interface CanvasUIProps {
   canvasId: string
   accessToken?: string | null
+  callbacksRef: React.MutableRefObject<CanvasCallbacks>
 }
 
-interface OrganizeStatusDetail {
-  active?: boolean
-  label?: string
-}
-
-interface PlacementStartDetail {
-  source: 'organize'
-  plan: PlacementPlan
-  boards: OrganizePlanBoardPreview[]
-  canvasId: string
-}
-
-export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
+export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps) {
   const editor = useEditor()
   const { isDefaultTheme, resetTheme } = useTheme()
   const dnaPanel = useDNAPanel()
@@ -59,6 +49,9 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
     markCapturesApplied: holdingCell.markCapturesApplied,
     onPlacementFinalized: holdingCell.onPlacementComplete,
     onPlacementCancelled: holdingCell.exitPlacementMode,
+    onOrganizePlacementFinished: (outcome) => {
+      callbacksRef.current.onPlacementFinished?.(outcome)
+    },
   })
 
   const clusterItems = useMemo(() => {
@@ -116,51 +109,28 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
   }, [holdingCell, placement])
 
   useEffect(() => {
-    const handleAskAI = (event: Event) => {
-      const customEvent = event as CustomEvent<{ anchor?: { x: number; y: number } }>
-      setToolbarAIAnchor(customEvent.detail?.anchor || null)
+    const ref = callbacksRef.current
+    ref.onAskAI = (anchor) => {
+      setToolbarAIAnchor(anchor || null)
       setToolbarAI(true)
     }
-
-    window.addEventListener('grain:ask-ai', handleAskAI)
-    return () => window.removeEventListener('grain:ask-ai', handleAskAI)
-  }, [])
-
-  useEffect(() => {
-    const handleOrganizeStatus = (event: Event) => {
-      const detail = (event as CustomEvent<OrganizeStatusDetail>).detail || {}
-      setOrganizeStatus({
-        active: Boolean(detail.active),
-        label: detail.label || 'Organizing artifacts...',
-      })
+    ref.onOrganizeStatusChange = (active, label) => {
+      setOrganizeStatus({ active, label: label || 'Organizing artifacts...' })
+    }
+    ref.onOrganizeReviewOpenChange = (open) => {
+      setOrganizeReviewOpen(open)
+    }
+    ref.onStartPlacement = (plan, boards) => {
+      placement.startPlacement(plan, 'organize', boards)
     }
 
-    window.addEventListener('grain:organize-status', handleOrganizeStatus)
-    return () => window.removeEventListener('grain:organize-status', handleOrganizeStatus)
-  }, [])
-
-  useEffect(() => {
-    const handleOrganizeReviewOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ open?: boolean }>).detail || {}
-      setOrganizeReviewOpen(Boolean(detail.open))
+    return () => {
+      ref.onAskAI = null
+      ref.onOrganizeStatusChange = null
+      ref.onOrganizeReviewOpenChange = null
+      ref.onStartPlacement = null
     }
-
-    window.addEventListener('grain:organize-review-open', handleOrganizeReviewOpen)
-    return () => window.removeEventListener('grain:organize-review-open', handleOrganizeReviewOpen)
-  }, [])
-
-
-  useEffect(() => {
-    const handlePlacementStart = (event: Event) => {
-      const detail = (event as CustomEvent<PlacementStartDetail>).detail
-      if (!detail || detail.source !== 'organize' || detail.canvasId !== canvasId) return
-
-      placement.startPlacement(detail.plan, 'organize', detail.boards)
-    }
-
-    window.addEventListener('grain:start-placement', handlePlacementStart)
-    return () => window.removeEventListener('grain:start-placement', handlePlacementStart)
-  }, [canvasId, placement.startPlacement])
+  }, [callbacksRef, placement.startPlacement])
 
   useEffect(() => {
     if (clusterItems.length === 0) {

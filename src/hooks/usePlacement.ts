@@ -11,6 +11,7 @@ export interface UsePlacementCallbacks {
   markCapturesApplied: (captureIds: string[]) => Promise<void>
   onPlacementFinalized: (appliedCaptureIds: string[]) => void
   onPlacementCancelled: () => void
+  onOrganizePlacementFinished: (outcome: 'committed' | 'cancelled') => void
 }
 
 export interface UsePlacementReturn {
@@ -64,11 +65,7 @@ export function usePlacement(
           preserveDimensions: true,
         })
         clearPlacementState()
-        window.dispatchEvent(
-          new CustomEvent('grain:placement-finished', {
-            detail: { source: 'organize', outcome: 'committed' },
-          })
-        )
+        callbacksRef.current.onOrganizePlacementFinished('committed')
         return
       }
 
@@ -104,11 +101,7 @@ export function usePlacement(
     const source = placementSource
     clearPlacementState()
     if (source === 'organize') {
-      window.dispatchEvent(
-        new CustomEvent('grain:placement-finished', {
-          detail: { source: 'organize', outcome: 'cancelled' },
-        })
-      )
+      callbacksRef.current.onOrganizePlacementFinished('cancelled')
     } else {
       callbacksRef.current.onPlacementCancelled()
     }

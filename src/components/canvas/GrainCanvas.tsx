@@ -4,7 +4,7 @@
 // Used by both community (/) and private (/canvas) routes.
 // Reference: grain-prd.md Section 5.1, 11.2
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { Editor, Tldraw, TLComponents, TLAsset } from 'tldraw'
 import 'tldraw/tldraw.css'
 import './grain-canvas.css'
@@ -20,10 +20,7 @@ import { GrainMainMenu } from './GrainMainMenu'
 import { GrainPageMenu } from './GrainPageMenu'
 import { createGrainToolbar } from './GrainToolbar'
 import { useCanvasDocumentSync } from '@/lib/useCanvasDocumentSync'
-
-function dispatchAskAI(anchor?: { x: number; y: number }) {
-  window.dispatchEvent(new CustomEvent('grain:ask-ai', { detail: { anchor } }))
-}
+import type { CanvasCallbacks } from '@/types/canvas-callbacks'
 
 interface GrainCanvasProps {
   canvasType: 'community' | 'private'
@@ -34,6 +31,14 @@ interface GrainCanvasProps {
 
 export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, accessToken }: GrainCanvasProps) {
   const canvasType = _canvasType
+  const callbacksRef = useRef<CanvasCallbacks>({
+    onPlacementFinished: null,
+    onOrganizeStatusChange: null,
+    onOrganizeReviewOpenChange: null,
+    onStartPlacement: null,
+    onAskAI: null,
+  })
+
   const customShapeUtils = useMemo(
     () => [SnapshotCardShapeUtil, AITextShapeUtil, GrainBookmarkShapeUtil],
     []
@@ -45,12 +50,17 @@ export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, acc
 
   const components = useMemo<TLComponents>(
     () => ({
-      ImageToolbar: createGrainImageToolbar(dispatchAskAI, canvasId),
-      ContextMenu: createGrainContextMenu(dispatchAskAI),
+      ImageToolbar: createGrainImageToolbar(
+        () => callbacksRef.current.onAskAI?.(),
+        canvasId
+      ),
+      ContextMenu: createGrainContextMenu(
+        (anchor?: { x: number; y: number }) => callbacksRef.current.onAskAI?.(anchor)
+      ),
       MenuPanel: GrainMenuPanel,
       MainMenu: GrainMainMenu,
       PageMenu: GrainPageMenu,
-      Toolbar: createGrainToolbar(canvasId),
+      Toolbar: createGrainToolbar(canvasId, callbacksRef),
     }),
     [canvasId]
   )
@@ -127,7 +137,7 @@ export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, acc
         inferDarkMode={false}
         options={{ actionShortcutsLocation: 'menu' }}
       >
-        <CanvasUI canvasId={canvasId} accessToken={accessToken} />
+        <CanvasUI canvasId={canvasId} accessToken={accessToken} callbacksRef={callbacksRef} />
       </Tldraw>
     </div>
   )
