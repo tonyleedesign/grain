@@ -108,6 +108,13 @@ export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps)
     holdingCell.enterPlacementMode()
   }, [holdingCell, placement])
 
+  // Register CanvasUI's handlers into the shared callbacksRef so tldraw's factory
+  // components (GrainToolbar, GrainImageToolbar, GrainContextMenu) can call them
+  // directly instead of via DOM custom events.
+  // Note: onPlacementFinished is intentionally NOT registered here — it flows the
+  // other direction (CanvasUI → GrainToolbar) and is registered by OrganizeToolbarButton.
+  // Note: placement.startPlacement has an empty useCallback dep array so it's stable
+  // for the lifetime of the component — this effect runs only once on mount.
   useEffect(() => {
     const ref = callbacksRef.current
     ref.onAskAI = (anchor) => {
