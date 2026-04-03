@@ -23,6 +23,17 @@ export async function GET(request: NextRequest) {
   if (canvasId) {
     const authResponse = await requireCanvasAccess(request, canvasId)
     if (authResponse) return authResponse
+  } else if (boardId) {
+    // boardId-only lookup — find the board's canvas first, then auth check
+    const { data: boardCanvas } = await supabaseServer
+      .from('boards')
+      .select('canvas_id')
+      .eq('id', boardId)
+      .maybeSingle()
+    if (boardCanvas?.canvas_id) {
+      const authResponse = await requireCanvasAccess(request, boardCanvas.canvas_id)
+      if (authResponse) return authResponse
+    }
   }
 
   type BoardRow = Record<string, unknown> & {
