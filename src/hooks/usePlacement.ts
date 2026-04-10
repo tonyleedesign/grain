@@ -33,7 +33,8 @@ export interface UsePlacementReturn {
 export function usePlacement(
   editor: Editor,
   canvasId: string,
-  callbacks: UsePlacementCallbacks
+  callbacks: UsePlacementCallbacks,
+  getAuthHeaders?: () => Promise<Record<string, string> | null>
 ): UsePlacementReturn {
   const [placementPlan, setPlacementPlan] = useState<PlacementPlan | null>(null)
   const [placementSource, setPlacementSource] = useState<'holding-cell' | 'organize' | null>(null)
@@ -59,10 +60,12 @@ export function usePlacement(
       if (!placementPlan) return
 
       if (placementSource === 'organize') {
+        const authHeaders = getAuthHeaders ? await getAuthHeaders() : null
         await applyOrganizePlan(editor, canvasId, organizePlacementBoards, {
           anchor,
           plan: placementPlan,
           preserveDimensions: true,
+          authHeaders: authHeaders ?? undefined,
         })
         clearPlacementState()
         callbacksRef.current.onOrganizePlacementFinished('committed')

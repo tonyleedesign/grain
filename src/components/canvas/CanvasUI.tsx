@@ -61,7 +61,7 @@ export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps)
     onOrganizePlacementFinished: (outcome) => {
       callbacksRef.current.onPlacementFinished?.(outcome)
     },
-  })
+  }, getAuthHeadersForHooks)
 
   const clusterItems = useMemo(() => {
     const items: Array<

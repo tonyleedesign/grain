@@ -492,7 +492,7 @@ export function useHoldingCell(canvasId: string, accessToken?: string | null): U
     } finally {
       setIsGroupingHolding(false)
     }
-  }, [canvasId, holdingArtifacts, holdingSelectedIds, isGroupingHolding])
+  }, [canvasId, getAuthHeaders, holdingArtifacts, holdingSelectedIds, isGroupingHolding])
 
   const onPlacementComplete = useCallback((appliedCaptureIds: string[]) => {
     const appliedIds = new Set(appliedCaptureIds)

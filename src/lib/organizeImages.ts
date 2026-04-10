@@ -181,10 +181,15 @@ function getLayoutDimensions(artifact: OrganizeArtifactPreview) {
   }
 }
 
-async function createBoardRecord(canvasId: string, boardName: string, frameShapeId: string) {
+async function createBoardRecord(
+  canvasId: string,
+  boardName: string,
+  frameShapeId: string,
+  authHeaders?: Record<string, string>
+) {
   const createBoardResponse = await fetch('/api/boards', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({ name: boardName, canvasId, frameShapeId }),
   })
 
@@ -203,6 +208,7 @@ export async function applyOrganizePlan(
     anchor?: { x: number; y: number }
     plan?: PlacementPlan
     preserveDimensions?: boolean
+    authHeaders?: Record<string, string>
   }
 ) {
   for (const board of selectedBoards) {
@@ -260,7 +266,7 @@ export async function applyOrganizePlan(
       : (artifacts.reduce((sum, artifact) => sum + artifact.position_y, 0) / artifacts.length) - frameH / 2
 
     const frameId = createShapeId()
-    const { id: boardId } = await createBoardRecord(canvasId, board.board_name, frameId)
+    const { id: boardId } = await createBoardRecord(canvasId, board.board_name, frameId, options?.authHeaders)
 
     editor.run(() => {
       editor.createShape({
