@@ -264,3 +264,18 @@ export async function markCapturesApplied(canvasId: string, captureIds: string[]
     throw new Error(error.message)
   }
 }
+
+export async function deletePendingCaptures(canvasId: string, captureIds: string[]) {
+  if (captureIds.length === 0) return
+
+  const { error } = await supabaseServer
+    .from('captures')
+    .delete()
+    .eq('canvas_id', canvasId)
+    .eq('status', 'ready')
+    .in('id', captureIds)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+}

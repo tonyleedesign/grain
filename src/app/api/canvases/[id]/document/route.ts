@@ -1,34 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
-
-async function authorizeCanvasAccess(request: NextRequest, canvasId: string) {
-  const { data: canvas, error } = await supabaseServer
-    .from('canvases')
-    .select('id, type, owner_id')
-    .eq('id', canvasId)
-    .single()
-
-  if (error || !canvas) {
-    return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
-  }
-
-  if (canvas.type !== 'private') {
-    return null
-  }
-
-  const authHeader = request.headers.get('authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const { data, error: authError } = await supabaseServer.auth.getUser(token)
-  if (authError || !data.user || data.user.id !== canvas.owner_id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  return null
-}
+import { requireCanvasAccess } from '@/lib/server-auth'
 
 export async function GET(
   request: NextRequest,
@@ -40,7 +12,7 @@ export async function GET(
     return NextResponse.json({ error: 'canvasId is required' }, { status: 400 })
   }
 
-  const authResponse = await authorizeCanvasAccess(request, canvasId)
+  const authResponse = await requireCanvasAccess(request, canvasId)
   if (authResponse) return authResponse
 
   const { data, error } = await supabaseServer
@@ -73,7 +45,7 @@ export async function PUT(
     return NextResponse.json({ error: 'canvasId and document are required' }, { status: 400 })
   }
 
-  const authResponse = await authorizeCanvasAccess(request, canvasId)
+  const authResponse = await requireCanvasAccess(request, canvasId)
   if (authResponse) return authResponse
 
   const { error } = await supabaseServer

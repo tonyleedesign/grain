@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { requireCanvasAccess } from '@/lib/server-auth'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +16,19 @@ export async function POST(request: NextRequest) {
     if (!boardId || !rating) {
       return NextResponse.json({ error: 'boardId and rating required' }, { status: 400 })
     }
+
+    const { data: board } = await supabaseServer
+      .from('boards')
+      .select('canvas_id')
+      .eq('id', boardId)
+      .single()
+
+    if (!board?.canvas_id) {
+      return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+    }
+
+    const authResponse = await requireCanvasAccess(request, board.canvas_id)
+    if (authResponse) return authResponse
 
     const { error } = await supabaseServer.from('dna_feedback').insert({
       board_id: boardId,
@@ -41,6 +55,19 @@ export async function GET(request: NextRequest) {
   if (!boardId) {
     return NextResponse.json({ error: 'boardId required' }, { status: 400 })
   }
+
+  const { data: board } = await supabaseServer
+    .from('boards')
+    .select('canvas_id')
+    .eq('id', boardId)
+    .single()
+
+  if (!board?.canvas_id) {
+    return NextResponse.json({ error: 'Board not found' }, { status: 404 })
+  }
+
+  const authResponse = await requireCanvasAccess(request, board.canvas_id)
+  if (authResponse) return authResponse
 
   const { data, error } = await supabaseServer
     .from('dna_feedback')

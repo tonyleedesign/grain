@@ -11,6 +11,15 @@ export interface ChromeRuntimeAPI {
   onStartup: {
     addListener(callback: () => void): void
   }
+  onMessage: {
+    addListener(
+      callback: (
+        message: unknown,
+        sender: unknown,
+        sendResponse: (response?: unknown) => void
+      ) => boolean | void
+    ): void
+  }
 }
 
 export interface ChromeContextMenusAPI {
@@ -32,12 +41,17 @@ export interface ChromeContextMenusAPI {
 
 export interface ChromeTabsAPI {
   query(options: { active?: boolean; currentWindow?: boolean }): Promise<ChromeTab[]>
+  captureVisibleTab(
+    windowId?: number | null,
+    options?: { format?: 'jpeg' | 'png'; quality?: number }
+  ): Promise<string>
 }
 
 export interface ChromeScriptingAPI {
   executeScript<T = unknown>(options: {
     target: { tabId: number }
-    func: (...args: never[]) => T
+    func: () => T | Promise<T>
+    args?: unknown[]
   }): Promise<Array<{ result?: T }>>
 }
 

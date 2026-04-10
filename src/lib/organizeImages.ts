@@ -9,6 +9,7 @@ import type {
   OrganizePlanBoardPreview,
   OrganizePlanResponse,
 } from '@/types/organize'
+import type { PlacementPlan } from '@/types/holding-cell'
 
 const BOARD_PADDING = 24
 const ITEM_GAP = 12
@@ -123,17 +124,18 @@ function buildOrganizeInput(artifacts: OrganizeArtifactPreview[]): OrganizeArtif
   }))
 }
 
-export async function requestOrganizePlan(
-  editor: Editor,
-  canvasId: string
+export async function requestArtifactOrganizePlan(
+  artifacts: OrganizeArtifactInput[],
+  canvasId: string,
+  artifactPreviewMap: Map<string, OrganizeArtifactPreview>,
+  authHeaders?: Record<string, string> | null
 ): Promise<OrganizePlanBoardPreview[] | null> {
-  const artifacts = getUngroupedOrganizeArtifactPreviews(editor)
   if (artifacts.length === 0) return null
 
   const response = await fetch('/api/organize', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ artifacts: buildOrganizeInput(artifacts), canvasId }),
+    headers: { 'Content-Type': 'application/json', ...(authHeaders || {}) },
+    body: JSON.stringify({ artifacts, canvasId }),
     signal: AbortSignal.timeout(45000),
   })
 
@@ -143,14 +145,24 @@ export async function requestOrganizePlan(
   }
 
   const result = (await response.json()) as OrganizePlanResponse
-  const artifactMap = new Map(artifacts.map((artifact) => [artifact.id, artifact]))
 
   return result.boards.map((board) => ({
     ...board,
     artifacts: board.artifact_ids
-      .map((artifactId) => artifactMap.get(artifactId))
+      .map((artifactId) => artifactPreviewMap.get(artifactId))
       .filter((artifact): artifact is OrganizeArtifactPreview => !!artifact),
   }))
+}
+
+export async function requestOrganizePlan(
+  editor: Editor,
+  canvasId: string,
+  authHeaders?: Record<string, string> | null
+): Promise<OrganizePlanBoardPreview[] | null> {
+  const artifacts = getUngroupedOrganizeArtifactPreviews(editor)
+  if (artifacts.length === 0) return null
+  const artifactMap = new Map(artifacts.map((artifact) => [artifact.id, artifact]))
+  return requestArtifactOrganizePlan(buildOrganizeInput(artifacts), canvasId, artifactMap, authHeaders)
 }
 
 function getLayoutDimensions(artifact: OrganizeArtifactPreview) {
@@ -169,10 +181,15 @@ function getLayoutDimensions(artifact: OrganizeArtifactPreview) {
   }
 }
 
-async function createBoardRecord(canvasId: string, boardName: string, frameShapeId: string) {
+async function createBoardRecord(
+  canvasId: string,
+  boardName: string,
+  frameShapeId: string,
+  authHeaders?: Record<string, string>
+) {
   const createBoardResponse = await fetch('/api/boards', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({ name: boardName, canvasId, frameShapeId }),
   })
 
@@ -186,7 +203,13 @@ async function createBoardRecord(canvasId: string, boardName: string, frameShape
 export async function applyOrganizePlan(
   editor: Editor,
   canvasId: string,
-  selectedBoards: OrganizePlanBoardPreview[]
+  selectedBoards: OrganizePlanBoardPreview[],
+  options?: {
+    anchor?: { x: number; y: number }
+    plan?: PlacementPlan
+    preserveDimensions?: boolean
+    authHeaders?: Record<string, string>
+  }
 ) {
   for (const board of selectedBoards) {
     if (!board.artifacts.length) continue
@@ -203,8 +226,6 @@ export async function applyOrganizePlan(
     const artifacts = board.artifacts.filter((artifact) => shapeMap.has(artifact.id))
     if (!artifacts.length) continue
 
-    const avgX = artifacts.reduce((sum, artifact) => sum + artifact.position_x, 0) / artifacts.length
-    const avgY = artifacts.reduce((sum, artifact) => sum + artifact.position_y, 0) / artifacts.length
     const laidOut = artifacts.map((artifact) => ({
       artifact,
       ...getLayoutDimensions(artifact),
@@ -228,20 +249,31 @@ export async function applyOrganizePlan(
     }
     if (currentRow.length > 0) rows.push(currentRow)
 
+    const plannedBoardItem = options?.plan?.items.find(
+      (item): item is PlacementPlan['items'][number] & { type: 'board' } => item.type === 'board' && item.board.id === board.id
+    )
     const rowWidths = rows.map((row) => row.reduce((sum, item) => sum + item.width, 0) + (row.length - 1) * ITEM_GAP)
     const rowHeights = rows.map((row) => Math.max(...row.map((item) => item.height)))
-    const frameW = Math.max(...rowWidths, 240) + BOARD_PADDING * 2
-    const frameH = rowHeights.reduce((sum, height) => sum + height, 0) + (rows.length - 1) * ITEM_GAP + BOARD_PADDING * 2 + HEADER_HEIGHT
+    const computedFrameW = Math.max(...rowWidths, 240) + BOARD_PADDING * 2
+    const computedFrameH = rowHeights.reduce((sum, height) => sum + height, 0) + (rows.length - 1) * ITEM_GAP + BOARD_PADDING * 2 + HEADER_HEIGHT
+    const frameW = plannedBoardItem?.width ?? computedFrameW
+    const frameH = plannedBoardItem?.height ?? computedFrameH
+    const frameX = options?.anchor && plannedBoardItem
+      ? options.anchor.x + plannedBoardItem.x
+      : (artifacts.reduce((sum, artifact) => sum + artifact.position_x, 0) / artifacts.length) - frameW / 2
+    const frameY = options?.anchor && plannedBoardItem
+      ? options.anchor.y + plannedBoardItem.y
+      : (artifacts.reduce((sum, artifact) => sum + artifact.position_y, 0) / artifacts.length) - frameH / 2
 
     const frameId = createShapeId()
-    const { id: boardId } = await createBoardRecord(canvasId, board.board_name, frameId)
+    const { id: boardId } = await createBoardRecord(canvasId, board.board_name, frameId, options?.authHeaders)
 
     editor.run(() => {
       editor.createShape({
         id: frameId,
         type: 'frame',
-        x: avgX - frameW / 2,
-        y: avgY - frameH / 2,
+        x: frameX,
+        y: frameY,
         meta: { boardId },
         props: {
           w: frameW,
@@ -254,43 +286,50 @@ export async function applyOrganizePlan(
       rows.forEach((row, rowIndex) => {
         let x = BOARD_PADDING
         row.forEach((item) => {
+          const plannedChild = plannedBoardItem?.children.find((child) => child.artifact.id === item.artifact.id)
           const baseUpdate = {
             id: item.shape.id,
             type: item.shape.type,
             parentId: frameId,
-            x,
-            y: rowY,
+            x: plannedChild?.x ?? x,
+            y: plannedChild?.y ?? rowY,
           }
 
           if (item.shape.type === 'image') {
             editor.updateShape({
               ...baseUpdate,
               type: 'image',
-              props: {
-                ...item.shape.props,
-                w: item.width,
-                h: item.height,
-              },
+              props: options?.preserveDimensions
+                ? item.shape.props
+                : {
+                    ...item.shape.props,
+                    w: plannedChild?.width ?? item.width,
+                    h: plannedChild?.height ?? item.height,
+                  },
             })
           } else if (item.shape.type === 'bookmark') {
             editor.updateShape({
               ...baseUpdate,
               type: 'bookmark',
-              props: {
-                ...item.shape.props,
-                w: item.width,
-                h: item.height,
-              },
+              props: options?.preserveDimensions
+                ? item.shape.props
+                : {
+                    ...item.shape.props,
+                    w: plannedChild?.width ?? item.width,
+                    h: plannedChild?.height ?? item.height,
+                  },
             })
           } else if (item.shape.type === 'embed') {
             editor.updateShape({
               ...baseUpdate,
               type: 'embed',
-              props: {
-                ...item.shape.props,
-                w: item.width,
-                h: item.height,
-              },
+              props: options?.preserveDimensions
+                ? item.shape.props
+                : {
+                    ...item.shape.props,
+                    w: plannedChild?.width ?? item.width,
+                    h: plannedChild?.height ?? item.height,
+                  },
             })
           }
 

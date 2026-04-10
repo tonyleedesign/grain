@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sharp from 'sharp'
 import { supabaseServer } from '@/lib/supabase-server'
+import { requireCanvasAccess } from '@/lib/server-auth'
 
 const MAX_DIMENSION = 2000
 
@@ -21,6 +22,9 @@ export async function POST(request: NextRequest) {
     if (!canvasId) {
       return NextResponse.json({ error: 'canvasId is required' }, { status: 400 })
     }
+
+    const authResponse = await requireCanvasAccess(request, canvasId)
+    if (authResponse) return authResponse
 
     const results = await Promise.all(
       files.map(async (file) => {

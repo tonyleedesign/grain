@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase-server'
+import { requireCanvasAccess } from '@/lib/server-auth'
 
 type BoardRow = Record<string, unknown> & {
   id: string
@@ -84,6 +85,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   }
+
+  const authResponse = await requireCanvasAccess(request, canvasId)
+  if (authResponse) return authResponse
 
   const normalizedFrameName = frameName.trim()
 

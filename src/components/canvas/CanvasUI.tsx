@@ -1,256 +1,173 @@
 'use client'
 
-// Canvas UI layer — lives inside <Tldraw> context.
-// Manages DNA panel visibility based on frame selection.
-// Reference: grain-prd.md Section 11.3
-
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useEditor, useValue, TLShapeId } from 'tldraw'
-import { RotateCcw } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { useDNAPanel } from '@/hooks/useDNAPanel'
+import { usePlacement } from '@/hooks/usePlacement'
+import { useHoldingCell } from '@/hooks/useHoldingCell'
+import { Inbox, RotateCcw, Sparkles, X } from 'lucide-react'
 import { AIActionBar } from './AIActionBar'
 import { GrainSelectionToolbar } from './GrainSelectionToolbar'
 import { DNAPanelV2 } from '../dna/DNAPanelV2'
+import { HoldingCellModal } from './HoldingCellModal'
+import { Button } from '@/components/ui/button'
 import { useTheme } from '@/context/ThemeContext'
+import { useBoardIdentity } from '@/hooks/useBoardIdentity'
 import {
-  applyBoardLinkToShape,
-  clearBoardLinkFromShape,
-  findContainingBoardFrame,
-  getBoardIdFromMeta,
-  hasLiveBoardFrame,
-} from '@/lib/board-identity'
-import { applyPendingCaptures } from '@/lib/capture-placement'
-import { supabase } from '@/lib/supabase'
-import type { PendingCapture } from '@/types/captures'
-
-interface ActiveBoard {
-  boardId?: string
-  boardName: string
-  frameShapeId: TLShapeId
-}
+  buildPlacementPlan,
+  enrichArtifactsWithNaturalDimensions,
+} from '@/lib/capture-placement'
+import type {
+  PlacementPlan,
+} from '@/types/holding-cell'
+import type { CanvasCallbacks } from '@/types/canvas-callbacks'
+import type React from 'react'
 
 interface CanvasUIProps {
   canvasId: string
   accessToken?: string | null
+  callbacksRef: React.MutableRefObject<CanvasCallbacks>
 }
 
-export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
+export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps) {
   const editor = useEditor()
   const { isDefaultTheme, resetTheme } = useTheme()
-  const [activeBoard, setActiveBoard] = useState<ActiveBoard | null>(null)
-  const [panelVisible, setPanelVisible] = useState(false)
+  const dnaPanel = useDNAPanel()
+
+  const getAuthHeadersForHooks = useCallback(async () => {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token ?? accessToken ?? null
+    if (!token) return null
+    return { Authorization: `Bearer ${token}` }
+  }, [accessToken])
+
+  useBoardIdentity(editor, canvasId, getAuthHeadersForHooks)
+  const holdingCell = useHoldingCell(canvasId, accessToken)
   const [toolbarAI, setToolbarAI] = useState(false)
   const [toolbarAIAnchor, setToolbarAIAnchor] = useState<{ x: number; y: number } | null>(null)
   const [aiBarVisible, setAiBarVisible] = useState(false)
-  const [revertAnchor, setRevertAnchor] = useState<{ left: number; top: number } | null>(null)
-  const [lastBoardName, setLastBoardName] = useState<string | null>(null)
-  const [dnaExtracting, setDnaExtracting] = useState(false)
-  const isApplyingCapturesRef = useRef(false)
-  const capturePollTimeoutRef = useRef<number | null>(null)
-  const relinkingFramesRef = useRef(new Set<string>())
+  const [clusterAnchor, setClusterAnchor] = useState<{ left: number; top: number } | null>(null)
+  const [organizeReviewOpen, setOrganizeReviewOpen] = useState(false)
+  const [organizeStatus, setOrganizeStatus] = useState<{ active: boolean; label: string }>({
+    active: false,
+    label: 'Organizing artifacts...',
+  })
 
-  // Wire the AI button callbacks (image toolbar, context menu, selection toolbar)
-  useEffect(() => {
-    const handleAskAI = (event: Event) => {
-      const customEvent = event as CustomEvent<{ anchor?: { x: number; y: number } }>
-      setToolbarAIAnchor(customEvent.detail?.anchor || null)
-      setToolbarAI(true)
-    }
-    window.addEventListener('grain:ask-ai', handleAskAI)
-    return () => window.removeEventListener('grain:ask-ai', handleAskAI)
-  }, [])
+  const placement = usePlacement(editor, canvasId, {
+    markCapturesApplied: holdingCell.markCapturesApplied,
+    onPlacementFinalized: holdingCell.onPlacementComplete,
+    onPlacementCancelled: holdingCell.exitPlacementMode,
+    onOrganizePlacementFinished: (outcome) => {
+      callbacksRef.current.onPlacementFinished?.(outcome)
+    },
+  }, getAuthHeadersForHooks)
 
-  useEffect(() => {
-    const syncFrameBoardChildren = (frameId: TLShapeId, boardId: string) => {
-      const childIds = editor.getSortedChildIdsForParent(frameId)
-      for (const childId of childIds) {
-        const child = editor.getShape(childId as TLShapeId)
-        if (!child) continue
-        applyBoardLinkToShape(editor, child, boardId)
-      }
+  const clusterItems = useMemo(() => {
+    const items: Array<
+      | { id: string; type: 'button'; label: string; icon?: 'revert' | 'inbox'; onClick: () => void; highlight?: boolean }
+      | { id: string; type: 'status'; label: string; icon?: 'sparkles' | 'inbox' }
+    > = []
+
+    if (!isDefaultTheme) {
+      items.push({ id: 'revert-theme', type: 'button', label: 'Revert', icon: 'revert', onClick: resetTheme })
     }
 
-    const ensureFrameBoardIdentity = async (shapeId: TLShapeId) => {
-      const frame = editor.getShape(shapeId)
-      if (!frame || frame.type !== 'frame') return
-
-      const boardId = getBoardIdFromMeta(frame)
-      const boardName = ((frame.props as { name?: string }).name || '').trim()
-      if (!boardId || !boardName || relinkingFramesRef.current.has(shapeId)) return
-
-      relinkingFramesRef.current.add(shapeId)
-
-      try {
-        const boardResponse = await fetch(
-          `/api/boards?${new URLSearchParams({ boardId, canvasId }).toString()}`
-        )
-
-        if (boardResponse.ok) {
-          const boardData = (await boardResponse.json()) as { id?: string; frame_shape_id?: string | null }
-          if (boardData.id === boardId && boardData.frame_shape_id === frame.id) {
-            syncFrameBoardChildren(frame.id, boardId)
-            return
-          }
-        }
-
-        const cloneResponse = await fetch('/api/boards/clone', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sourceBoardId: boardId,
-            canvasId,
-            frameShapeId: frame.id,
-            name: boardName,
-          }),
-        })
-
-        if (!cloneResponse.ok) return
-
-        const cloneData = (await cloneResponse.json()) as { id?: string }
-        if (!cloneData.id) return
-
-        editor.updateShape({
-          id: frame.id,
-          type: 'frame',
-          meta: { ...(frame.meta || {}), boardId: cloneData.id },
-        })
-
-        syncFrameBoardChildren(frame.id, cloneData.id)
-      } catch {
-        return
-      } finally {
-        relinkingFramesRef.current.delete(shapeId)
-      }
-    }
-
-    const shouldLinkShape = (shapeId: TLShapeId, mode: 'create' | 'change') => {
-      const shape = editor.getShape(shapeId)
-      if (!shape) return
-
-      if (shape.type === 'frame') {
-        void ensureFrameBoardIdentity(shape.id)
-        return
-      }
-
-      const containingFrame = findContainingBoardFrame(editor, shape)
-      if (!containingFrame) {
-        const staleBoardId = getBoardIdFromMeta(shape)
-        if (staleBoardId && mode === 'create') {
-          clearBoardLinkFromShape(editor, shape)
-          return
-        }
-
-        if (staleBoardId && !hasLiveBoardFrame(editor, staleBoardId)) {
-          clearBoardLinkFromShape(editor, shape)
-        }
-        return
-      }
-
-      const boardId = getBoardIdFromMeta(containingFrame)
-      if (!boardId) return
-
-      applyBoardLinkToShape(editor, shape, boardId)
-    }
-
-    const removeCreate = editor.sideEffects.registerAfterCreateHandler('shape', (shape, source) => {
-      if (source !== 'user') return
-      shouldLinkShape(shape.id, 'create')
-    })
-
-    const removeChange = editor.sideEffects.registerAfterChangeHandler('shape', (_prev, next, source) => {
-      if (source !== 'user') return
-      shouldLinkShape(next.id, 'change')
-    })
-
-    return () => {
-      removeCreate()
-      removeChange()
-    }
-  }, [canvasId, editor])
-
-  // Watch for selection changes reactively
-  const selectedShapes = useValue(
-    'selectedShapes',
-    () => editor.getSelectedShapes(),
-    [editor]
-  )
-
-  useEffect(() => {
-    // If exactly one frame is selected, open its DNA panel
-    if (selectedShapes.length === 1 && selectedShapes[0].type === 'frame') {
-      const frame = selectedShapes[0]
-      const name = (frame.props as { name?: string }).name
-      if (name) {
-        const animationFrame = window.requestAnimationFrame(() => {
-          setActiveBoard({
-            boardId: getBoardIdFromMeta(frame),
-            boardName: name,
-            frameShapeId: frame.id,
-          })
-          setLastBoardName(name)
-          setPanelVisible(true)
-        })
-        return () => window.cancelAnimationFrame(animationFrame)
-        return
-      }
-    }
-    // Nothing selected — hide the panel but keep it mounted
-    if (selectedShapes.length === 0) {
-      const animationFrame = window.requestAnimationFrame(() => {
-        setPanelVisible(false)
+    if (holdingCell.pendingCaptures.length > 0) {
+      items.push({
+        id: 'holding-cell',
+        type: 'button',
+        label: holdingCell.pendingCaptures.length === 1 ? '1 pending capture' : `${holdingCell.pendingCaptures.length} pending captures`,
+        icon: 'inbox',
+        onClick: holdingCell.openHoldingCell,
+        highlight: holdingCell.newCapturesForReviewIds.length > 0,
       })
-      return () => window.cancelAnimationFrame(animationFrame)
     }
-  }, [selectedShapes])
 
-  // Callback for AI to trigger DNA extraction
-  const handleExtractDna = useCallback(() => {
-    const selected = editor.getSelectedShapes()
-    const frame = selected.find((s) => s.type === 'frame')
-    if (frame) {
-      const name = (frame.props as { name?: string }).name
-      if (name) {
-        setActiveBoard({
-          boardId: getBoardIdFromMeta(frame),
-          boardName: name,
-          frameShapeId: frame.id,
-        })
-        setLastBoardName(name)
-        setPanelVisible(true)
-      }
+    if (organizeStatus.active) {
+      items.push({ id: 'organize-status', type: 'status', label: organizeStatus.label, icon: 'sparkles' })
     }
-  }, [editor])
+
+    if (placement.placementPlan) {
+      items.push({ id: 'placement-status', type: 'status', label: 'Click to place / Esc to cancel', icon: 'inbox' })
+    }
+
+    return items
+  }, [isDefaultTheme, organizeStatus.active, organizeStatus.label, holdingCell.pendingCaptures.length, holdingCell.newCapturesForReviewIds.length, holdingCell.openHoldingCell, placement.placementPlan, resetTheme])
+
+  const updateClusterAnchor = useCallback(() => {
+    const button = document.querySelector('.grain-organize-toolbar-button') as HTMLElement | null
+    if (!button) {
+      setClusterAnchor(null)
+      return
+    }
+    const rect = button.getBoundingClientRect()
+    setClusterAnchor({ left: rect.left + rect.width / 2, top: rect.top - 8 })
+  }, [])
 
   const handleAskAI = useCallback(() => {
     setToolbarAIAnchor(null)
     setToolbarAI(true)
   }, [])
 
-  const boardToRender = activeBoard?.boardName || lastBoardName
+  const handleBeginPlacement = useCallback(async () => {
+    const { boards, artifacts } = holdingCell.getSelection()
+    if (boards.length === 0 && artifacts.length === 0) return
+    const [enrichedArtifacts, enrichedBoards] = await Promise.all([
+      enrichArtifactsWithNaturalDimensions(artifacts),
+      Promise.all(
+        boards.map(async (board) => ({
+          ...board,
+          artifacts: await enrichArtifactsWithNaturalDimensions(board.artifacts),
+        }))
+      ),
+    ])
+    placement.startPlacement(buildPlacementPlan({ artifacts: enrichedArtifacts, boards: enrichedBoards }), 'holding-cell')
+    holdingCell.enterPlacementMode()
+  }, [holdingCell, placement])
+
+  // Register CanvasUI's handlers into the shared callbacksRef so tldraw's factory
+  // components (GrainToolbar, GrainImageToolbar, GrainContextMenu) can call them
+  // directly instead of via DOM custom events.
+  // Note: onPlacementFinished is intentionally NOT registered here — it flows the
+  // other direction (CanvasUI → GrainToolbar) and is registered by OrganizeToolbarButton.
+  // Note: placement.startPlacement has an empty useCallback dep array so it's stable
+  // for the lifetime of the component — this effect runs only once on mount.
+  useEffect(() => {
+    const ref = callbacksRef.current
+    ref.onAskAI = (anchor) => {
+      setToolbarAIAnchor(anchor || null)
+      setToolbarAI(true)
+    }
+    ref.onOrganizeStatusChange = (active, label) => {
+      setOrganizeStatus({ active, label: label || 'Organizing artifacts...' })
+    }
+    ref.onOrganizeReviewOpenChange = (open) => {
+      setOrganizeReviewOpen(open)
+    }
+    ref.onStartPlacement = (plan, boards) => {
+      placement.startPlacement(plan, 'organize', boards)
+    }
+
+    return () => {
+      ref.onAskAI = null
+      ref.onOrganizeStatusChange = null
+      ref.onOrganizeReviewOpenChange = null
+      ref.onStartPlacement = null
+    }
+  }, [callbacksRef, placement.startPlacement])
 
   useEffect(() => {
-    if (isDefaultTheme) {
+    if (clusterItems.length === 0) {
+      setClusterAnchor(null)
       return
     }
 
     let frame = 0
-
-    const updateAnchor = () => {
-      const button = document.querySelector('.grain-organize-toolbar-button') as HTMLElement | null
-      if (!button) {
-        setRevertAnchor(null)
-        return
-      }
-
-      const rect = button.getBoundingClientRect()
-      setRevertAnchor({
-        left: rect.left + rect.width / 2,
-        top: rect.top - 8,
-      })
-    }
-
     const scheduleUpdate = () => {
       cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(updateAnchor)
+      frame = window.requestAnimationFrame(updateClusterAnchor)
     }
 
     scheduleUpdate()
@@ -260,179 +177,15 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
       cancelAnimationFrame(frame)
       window.removeEventListener('resize', scheduleUpdate)
     }
-  }, [isDefaultTheme])
+  }, [clusterItems.length, updateClusterAnchor])
 
-  useEffect(() => {
-    if (!accessToken) return
-
-    let cancelled = false
-    const FAST_POLL_MS = 1500
-    const IDLE_POLL_MS = 4000
-
-    const getAuthHeaders = async () => {
-      const { data } = await supabase.auth.getSession()
-      const token = data.session?.access_token ?? accessToken
-
-      if (!token) return null
-
-      return {
-        Authorization: `Bearer ${token}`,
-      }
-    }
-
-    const clearScheduledPoll = () => {
-      if (capturePollTimeoutRef.current) {
-        window.clearTimeout(capturePollTimeoutRef.current)
-        capturePollTimeoutRef.current = null
-      }
-    }
-
-    const scheduleNextPoll = (delay: number) => {
-      clearScheduledPoll()
-
-      if (cancelled) return
-
-      capturePollTimeoutRef.current = window.setTimeout(() => {
-        if (!cancelled && !document.hidden) {
-          void loadPendingCaptures()
-        }
-      }, delay)
-    }
-
-    const loadPendingCaptures = async () => {
-      if (isApplyingCapturesRef.current) return
-      isApplyingCapturesRef.current = true
-      let nextPollDelay = IDLE_POLL_MS
-
-      try {
-        let authHeaders = await getAuthHeaders()
-        if (!authHeaders) return
-
-        let response = await fetch(`/api/send-to-grain/pending?canvasId=${canvasId}`, {
-          cache: 'no-store',
-          headers: authHeaders,
-        })
-
-        if (response.status === 401) {
-          authHeaders = await getAuthHeaders()
-          if (!authHeaders) return
-
-          response = await fetch(`/api/send-to-grain/pending?canvasId=${canvasId}`, {
-            cache: 'no-store',
-            headers: authHeaders,
-          })
-        }
-
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => '')
-          console.error('Failed to fetch pending captures:', response.status, errorText)
-          return
-        }
-
-        const data = (await response.json()) as { captures?: PendingCapture[] }
-        const captures = data.captures || []
-        console.info('[SendToGrain] pending captures fetched', {
-          canvasId,
-          count: captures.length,
-          ids: captures.map((capture) => capture.id),
-        })
-        if (!captures.length || cancelled) return
-
-        const appliedIds = await applyPendingCaptures(editor, captures)
-        console.info('[SendToGrain] pending captures applied', {
-          canvasId,
-          appliedIds,
-        })
-        nextPollDelay = FAST_POLL_MS
-        if (!appliedIds.length || cancelled) return
-
-        const authHeadersForMark = await getAuthHeaders()
-        if (!authHeadersForMark) return
-
-        const markAppliedResponse = await fetch('/api/send-to-grain/pending', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeadersForMark,
-          },
-          body: JSON.stringify({
-            canvasId,
-            captureIds: appliedIds,
-          }),
-        })
-
-        if (!markAppliedResponse.ok) {
-          const errorText = await markAppliedResponse.text().catch(() => '')
-          console.error('Failed to mark captures applied:', markAppliedResponse.status, errorText)
-        }
-      } catch (error) {
-        console.error('Failed to apply pending captures:', error)
-      } finally {
-        isApplyingCapturesRef.current = false
-        if (!cancelled && !document.hidden) {
-          scheduleNextPoll(nextPollDelay)
-        }
-      }
-    }
-
-    void loadPendingCaptures()
-
-    const triggerImmediateSync = () => {
-      if (!cancelled && !document.hidden) {
-        clearScheduledPoll()
-        void loadPendingCaptures()
-      }
-    }
-
-    window.addEventListener('focus', triggerImmediateSync)
-    window.addEventListener('pageshow', triggerImmediateSync)
-    window.addEventListener('online', triggerImmediateSync)
-    document.addEventListener('visibilitychange', triggerImmediateSync)
-
-    return () => {
-      cancelled = true
-      clearScheduledPoll()
-      window.removeEventListener('focus', triggerImmediateSync)
-      window.removeEventListener('pageshow', triggerImmediateSync)
-      window.removeEventListener('online', triggerImmediateSync)
-      document.removeEventListener('visibilitychange', triggerImmediateSync)
-    }
-  }, [accessToken, canvasId, editor])
 
   return (
     <>
-      {!isDefaultTheme && (
-        <button
-          onClick={resetTheme}
-          title="Revert theme"
-          style={{
-            position: 'fixed',
-            left: revertAnchor?.left ?? '50%',
-            top: revertAnchor?.top ?? 84,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '6px 12px',
-            borderRadius: '999px',
-            border: '1px solid var(--color-border)',
-            backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-text)',
-            boxShadow: 'var(--shadow-toolbar)',
-            fontFamily: 'var(--font-family)',
-            fontSize: 12,
-            cursor: 'pointer',
-          }}
-        >
-          <RotateCcw size={12} />
-          Revert
-        </button>
-      )}
       {!aiBarVisible && <GrainSelectionToolbar canvasId={canvasId} onAskAI={handleAskAI} />}
       <AIActionBar
         canvasId={canvasId}
-        onExtractDna={handleExtractDna}
+        onExtractDna={dnaPanel.handleExtractDna}
         forceExpanded={toolbarAI}
         forceAnchor={toolbarAIAnchor}
         onForceExpandedConsumed={() => {
@@ -440,23 +193,336 @@ export function CanvasUI({ canvasId, accessToken }: CanvasUIProps) {
         }}
         onVisibilityChange={setAiBarVisible}
       />
-      <BoardProcessingOverlay
-        frameShapeId={activeBoard?.frameShapeId ?? null}
-        active={dnaExtracting}
-        label="Extracting DNA..."
-      />
-      {boardToRender && (
+
+      {clusterItems.length > 0 && clusterAnchor && !holdingCell.holdingOpen && !organizeReviewOpen ? (
+        <PillCluster anchor={clusterAnchor} items={clusterItems} />
+      ) : null}
+
+      <BoardProcessingOverlay frameShapeId={dnaPanel.activeBoard?.frameShapeId ?? null} active={dnaPanel.dnaExtracting} label="Extracting DNA..." />
+
+      {dnaPanel.boardToRender ? (
         <DNAPanelV2
-          boardName={boardToRender}
-          boardId={activeBoard?.boardId}
-          frameShapeId={activeBoard?.frameShapeId}
+          boardName={dnaPanel.boardToRender}
+          boardId={dnaPanel.activeBoard?.boardId}
+          frameShapeId={dnaPanel.activeBoard?.frameShapeId}
           canvasId={canvasId}
-          isOpen={panelVisible}
-          onClose={() => setPanelVisible(false)}
-          onExtractionStateChange={setDnaExtracting}
+          isOpen={dnaPanel.panelVisible}
+          onClose={dnaPanel.closePanel}
+          onExtractionStateChange={dnaPanel.setDnaExtracting}
+          accessToken={accessToken}
         />
-      )}
+      ) : null}
+
+      <HoldingCellModal
+        open={holdingCell.holdingOpen && holdingCell.pendingCaptures.length > 0}
+        mode={holdingCell.holdingMode === 'placement' ? (holdingCell.groupedBoards.length > 0 ? 'group-review' : 'review') : holdingCell.holdingMode}
+        captures={holdingCell.holdingMode === 'group-review'
+          ? holdingCell.holdingArtifacts.filter((artifact) => holdingCell.groupReviewCaptureIdSet.has(artifact.id) && !holdingCell.groupedArtifactIds.has(artifact.id))
+          : holdingCell.holdingArtifacts}
+        groupedBoards={holdingCell.groupedBoards}
+        newCaptureIds={holdingCell.sessionNewCaptureIds}
+        selectedIds={holdingCell.holdingSelectedIds}
+        isGrouping={holdingCell.isGroupingHolding}
+        onSelectionChange={holdingCell.handleSelectionChange}
+        onDeleteCapture={(captureId) => {
+          void holdingCell.deletePendingCapture(captureId)
+        }}
+        onClose={holdingCell.closeHoldingCell}
+        onGroup={holdingCell.handleGroup}
+        onRejectPlan={holdingCell.handleRejectPlan}
+        onPlaceSelected={handleBeginPlacement}
+        footerNotice={holdingCell.holdingMode === 'group-review' && holdingCell.newCapturesForReviewIds.length > 0 ? {
+          text: holdingCell.footerNoticeText,
+          ctaLabel: 'Review them',
+          onClick: holdingCell.handleFooterReviewNewCaptures,
+          animate: true,
+        } : null}
+        footerSecondaryLink={holdingCell.holdingMode === 'review' && holdingCell.hasGroupedSnapshot ? {
+          label: 'Back to grouped plan',
+          onClick: holdingCell.handleBackToGroupedPlan,
+        } : null}
+      />
+
+      <PlacementPreviewOverlay active={Boolean(placement.placementPlan)} plan={placement.placementPlan} />
+
+      <PlacementDecisionModal
+        open={Boolean(placement.placementOverlapFrameId && placement.placementPendingAnchor)}
+        title="Place inside this board?"
+        description="Clicking Continue will place all selected captures inside the target board frame."
+        confirmLabel="Continue"
+        onClose={placement.dismissOverlapPrompt}
+        onConfirm={placement.confirmOverlapPlacement}
+      />
+
+      <PlacementDecisionModal
+        open={Boolean(placement.placementError)}
+        title="Placement blocked"
+        description={placement.placementError || ''}
+        confirmLabel="Okay"
+        hideCancel
+        onClose={placement.dismissError}
+        onConfirm={placement.dismissError}
+      />
     </>
+  )
+}
+
+function PillCluster({
+  anchor,
+  items,
+}: {
+  anchor: { left: number; top: number }
+  items: Array<
+    | { id: string; type: 'button'; label: string; icon?: 'revert' | 'inbox'; onClick: () => void; highlight?: boolean }
+    | { id: string; type: 'status'; label: string; icon?: 'sparkles' | 'inbox' }
+  >
+}) {
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        left: anchor.left,
+        top: anchor.top,
+        transform: 'translate(-50%, -100%)',
+        zIndex: 1600,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      {items.map((item) =>
+        item.type === 'button' ? (
+          <button
+            key={item.id}
+            onClick={item.onClick}
+            style={{
+              ...pillStyle,
+              animation: item.highlight ? 'grain-pending-pill-shimmer 1.7s ease-in-out infinite' : undefined,
+              boxShadow: item.highlight
+                ? '0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent), var(--shadow-soft)'
+                : pillStyle.boxShadow,
+            }}
+          >
+            {item.icon === 'revert' ? <RotateCcw size={12} /> : <Inbox size={13} />}
+            {item.label}
+          </button>
+        ) : (
+          <div key={item.id} style={{ ...pillStyle, pointerEvents: 'none' }}>
+            {item.icon === 'sparkles' ? <Sparkles size={13} style={{ color: 'var(--color-accent)' }} /> : <Inbox size={13} />}
+            {item.label}
+          </div>
+        )
+      )}
+    </div>,
+    document.body
+  )
+}
+
+function PlacementPreviewOverlay({
+  active,
+  plan,
+}: {
+  active: boolean
+  plan: PlacementPlan | null
+}) {
+  const editor = useEditor()
+  type PreviewRect = {
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    type: 'capture' | 'board' | 'board-child'
+  }
+
+  const preview = useValue(
+    'holdingCellPlacementPreview',
+    () => {
+      if (!active || !plan) return null
+
+      const anchor = editor.inputs.getCurrentPagePoint()
+      const topLeft = editor.pageToViewport({ x: anchor.x, y: anchor.y })
+      const zoom = editor.getZoomLevel()
+
+      return {
+        left: topLeft.x,
+        top: topLeft.y,
+        width: plan.width * zoom,
+        height: plan.height * zoom,
+        items: plan.items.flatMap<PreviewRect>((item) => {
+          if (item.type === 'board') {
+            return [
+              {
+                id: `board:${item.board.id}`,
+                x: item.x * zoom,
+                y: item.y * zoom,
+                width: item.width * zoom,
+                height: item.height * zoom,
+                type: 'board' as const,
+              },
+              ...item.children.map((child, index) => ({
+                id: `board:${item.board.id}:child:${child.artifact.id}:${index}`,
+                x: (item.x + child.x) * zoom,
+                y: (item.y + child.y) * zoom,
+                width: child.width * zoom,
+                height: child.height * zoom,
+                type: 'board-child' as const,
+              })),
+            ]
+          }
+
+          return [
+            {
+              id: item.artifact.id,
+              x: item.x * zoom,
+              y: item.y * zoom,
+              width: item.width * zoom,
+              height: item.height * zoom,
+              type: 'capture' as const,
+            },
+          ]
+        }),
+      }
+    },
+    [active, editor, plan]
+  )
+
+  if (!preview) return null
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: preview.left,
+        top: preview.top,
+        width: preview.width,
+        height: preview.height,
+        pointerEvents: 'none',
+        zIndex: 1350,
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 'var(--radius-xl)',
+          border: '1px dashed color-mix(in srgb, var(--color-accent) 60%, var(--color-border))',
+          backgroundColor: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
+        }}
+      />
+      {preview.items.map((item) => (
+        <div
+          key={item.id}
+          style={{
+            position: 'absolute',
+            left: item.x,
+            top: item.y,
+            width: item.width,
+            height: item.height,
+            borderRadius: 'var(--radius-lg)',
+            border: item.type === 'board'
+              ? '1px dashed color-mix(in srgb, var(--color-text) 28%, var(--color-border))'
+              : item.type === 'board-child'
+                ? '1px solid color-mix(in srgb, var(--color-text) 12%, var(--color-border))'
+              : '1px solid color-mix(in srgb, var(--color-text) 16%, var(--color-border))',
+            backgroundColor: item.type === 'board'
+              ? 'color-mix(in srgb, var(--color-text) 4%, var(--color-surface))'
+              : item.type === 'board-child'
+                ? 'color-mix(in srgb, var(--color-surface) 64%, transparent)'
+              : 'color-mix(in srgb, var(--color-surface) 72%, transparent)',
+            boxShadow: 'var(--shadow-card)',
+            opacity: item.type === 'board-child' ? 0.58 : 0.75,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PlacementDecisionModal({
+  open,
+  title,
+  description,
+  confirmLabel,
+  hideCancel = false,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean
+  title: string
+  description: string
+  confirmLabel: string
+  hideCancel?: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  if (!open || typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1500,
+        backgroundColor: 'color-mix(in srgb, var(--color-text) 34%, transparent)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: 'min(420px, calc(100vw - 48px))',
+          borderRadius: 'var(--radius-xl)',
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-panel)',
+          padding: 24,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text)', marginBottom: 6 }}>
+              {title}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--color-muted)' }}>{description}</div>
+          </div>
+          <Button
+            onClick={onClose}
+            variant="outline"
+            size="icon-sm"
+            className="rounded-full text-[var(--color-muted)] bg-[var(--color-bg)]"
+            aria-label="Close decision modal"
+          >
+            <X size={14} />
+          </Button>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          {!hideCancel ? (
+            <Button onClick={onClose} variant="outline" size="lg" className="rounded-full bg-[var(--color-bg)]">
+              Cancel
+            </Button>
+          ) : null}
+          <Button
+            onClick={onConfirm}
+            size="lg"
+            className="rounded-full bg-[var(--color-accent)] text-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-accent)_88%,black_12%)]"
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 
@@ -507,9 +573,22 @@ function BoardProcessingOverlay({
         height: overlayBounds.height,
       }}
     >
-      <div className="grain-board-processing-overlay__label">
-        {label}
-      </div>
+      <div className="grain-board-processing-overlay__label">{label}</div>
     </div>
   )
+}
+
+const pillStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 12px',
+  borderRadius: '999px',
+  backgroundColor: 'var(--color-surface)',
+  border: '1px solid var(--color-border)',
+  boxShadow: 'var(--shadow-toolbar)',
+  color: 'var(--color-text)',
+  fontFamily: 'var(--font-family)',
+  fontSize: 12,
+  cursor: 'pointer',
 }

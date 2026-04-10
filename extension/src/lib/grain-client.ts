@@ -225,6 +225,54 @@ export async function createSendToGrainPage(
   return data.page
 }
 
+export async function getPrivateCanvasId(options: GrainClientOptions): Promise<string> {
+  const response = await fetch(`${options.baseUrl}/api/auth/private-canvas`, {
+    headers: {
+      ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Connection expired. Reconnect from a signed-in Grain tab.')
+    }
+    throw new Error('Failed to get canvas ID')
+  }
+  const data = (await response.json()) as { canvasId: string }
+  return data.canvasId
+}
+
+export async function uploadScreenshot(
+  dataUrl: string,
+  canvasId: string,
+  options: GrainClientOptions
+): Promise<{ url: string; width: number; height: number }> {
+  const blob = await fetch(dataUrl).then((r) => r.blob())
+  const formData = new FormData()
+  formData.append('images', blob, 'screenshot.jpg')
+  formData.append('canvasId', canvasId)
+
+  const response = await fetch(`${options.baseUrl}/api/upload`, {
+    method: 'POST',
+    headers: {
+      ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
+    },
+    body: formData,
+  })
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Connection expired. Reconnect from a signed-in Grain tab.')
+    }
+    const data = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(data.error || 'Failed to upload screenshot')
+  }
+
+  const data = (await response.json()) as { images: Array<{ url: string; width: number; height: number }> }
+  const image = data.images[0]
+  if (!image) throw new Error('No image returned from upload')
+  return image
+}
+
 export async function createSendToGrainPageFromStoredConfig(name: string) {
   const config = await getStoredConfig()
   if (!config) {
