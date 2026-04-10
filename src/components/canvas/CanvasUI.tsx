@@ -17,6 +17,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { useBoardIdentity } from '@/hooks/useBoardIdentity'
 import {
   buildPlacementPlan,
+  enrichArtifactsWithNaturalDimensions,
 } from '@/lib/capture-placement'
 import type {
   PlacementPlan,
@@ -110,10 +111,19 @@ export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps)
     setToolbarAI(true)
   }, [])
 
-  const handleBeginPlacement = useCallback(() => {
+  const handleBeginPlacement = useCallback(async () => {
     const { boards, artifacts } = holdingCell.getSelection()
     if (boards.length === 0 && artifacts.length === 0) return
-    placement.startPlacement(buildPlacementPlan({ artifacts, boards }), 'holding-cell')
+    const [enrichedArtifacts, enrichedBoards] = await Promise.all([
+      enrichArtifactsWithNaturalDimensions(artifacts),
+      Promise.all(
+        boards.map(async (board) => ({
+          ...board,
+          artifacts: await enrichArtifactsWithNaturalDimensions(board.artifacts),
+        }))
+      ),
+    ])
+    placement.startPlacement(buildPlacementPlan({ artifacts: enrichedArtifacts, boards: enrichedBoards }), 'holding-cell')
     holdingCell.enterPlacementMode()
   }, [holdingCell, placement])
 

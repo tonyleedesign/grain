@@ -31,6 +31,40 @@ const MAX_LINK_HEIGHT = 220
 
 type PlacementSizingMode = 'normalize' | 'preserve'
 
+function loadImageNaturalDimensions(src: string): Promise<{ w: number; h: number } | null> {
+  return new Promise((resolve) => {
+    const img = new window.Image()
+    const timeout = setTimeout(() => resolve(null), 5000)
+    img.onload = () => {
+      clearTimeout(timeout)
+      resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    }
+    img.onerror = () => {
+      clearTimeout(timeout)
+      resolve(null)
+    }
+    img.src = src
+  })
+}
+
+// Loads natural image dimensions for all image-kind artifacts in parallel.
+// Browsers typically serve these from cache (images are already loaded in the holding cell),
+// so this is near-instant. Fixes object-fit:cover cropping caused by wrong stored dimensions.
+export async function enrichArtifactsWithNaturalDimensions(
+  artifacts: HoldingCellArtifact[]
+): Promise<HoldingCellArtifact[]> {
+  return Promise.all(
+    artifacts.map(async (artifact) => {
+      if (artifact.kind !== 'image') return artifact
+      const src = artifact.previewUrl || artifact.url
+      if (!src) return artifact
+      const dims = await loadImageNaturalDimensions(src)
+      if (!dims || dims.w === 0 || dims.h === 0) return artifact
+      return { ...artifact, width: dims.w, height: dims.h }
+    })
+  )
+}
+
 export function getTargetPageId(editor: Editor, capture: PendingCapture): TLPageId {
   const pageId =
     typeof capture.metadata?.targetPageId === 'string' ? capture.metadata.targetPageId : null
