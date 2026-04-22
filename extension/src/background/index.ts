@@ -2,49 +2,83 @@ import { chromeApi } from '../lib/chrome-api.js'
 import { EXTENSION_NAME, type SendToGrainRequest } from '../lib/index.js'
 import {
   clearStoredConfig,
-  getPrivateCanvasId,
-  getStoredConfig,
-  sendToGrain,
   sendToGrainFromStoredConfig,
-  uploadScreenshot,
 } from '../lib/grain-client.js'
+import { captureAndSendScreenshot } from '../lib/screenshot/index.js'
+import type { ScreenshotMode } from '../lib/screenshot/types.js'
 
 const MENU_IDS = {
+  root: 'send-to-grain-root',
   link: 'send-to-grain-link',
   image: 'send-to-grain-image',
   page: 'send-to-grain-page',
-  screenshot: 'send-to-grain-screenshot',
+  screenshotRoot: 'send-to-grain-screenshot-root',
+  screenshotViewport: 'send-to-grain-screenshot-viewport',
+  screenshotFullPage: 'send-to-grain-screenshot-full-page',
+  screenshotElement: 'send-to-grain-screenshot-element',
 } as const
 
 async function registerContextMenus() {
   await chromeApi.contextMenus.removeAll()
+
+  chromeApi.contextMenus.create({
+    id: MENU_IDS.root,
+    title: EXTENSION_NAME,
+    contexts: ['page', 'link', 'image'],
+  })
+
   chromeApi.contextMenus.create({
     id: MENU_IDS.link,
-    title: EXTENSION_NAME,
+    parentId: MENU_IDS.root,
+    title: 'Send link to Grain',
     contexts: ['link'],
   })
 
   chromeApi.contextMenus.create({
     id: MENU_IDS.image,
+    parentId: MENU_IDS.root,
     title: 'Send image to Grain',
     contexts: ['image'],
   })
 
   chromeApi.contextMenus.create({
     id: MENU_IDS.page,
+    parentId: MENU_IDS.root,
     title: 'Send link to Grain',
     contexts: ['page'],
   })
 
   chromeApi.contextMenus.create({
-    id: MENU_IDS.screenshot,
-    title: 'Screenshot page to Grain',
+    id: MENU_IDS.screenshotRoot,
+    parentId: MENU_IDS.root,
+    title: 'Screenshot',
+    contexts: ['page'],
+  })
+
+  chromeApi.contextMenus.create({
+    id: MENU_IDS.screenshotViewport,
+    parentId: MENU_IDS.screenshotRoot,
+    title: 'Viewport',
+    contexts: ['page'],
+  })
+
+  chromeApi.contextMenus.create({
+    id: MENU_IDS.screenshotFullPage,
+    parentId: MENU_IDS.screenshotRoot,
+    title: 'Full page',
+    contexts: ['page'],
+  })
+
+  chromeApi.contextMenus.create({
+    id: MENU_IDS.screenshotElement,
+    parentId: MENU_IDS.screenshotRoot,
+    title: 'Select element',
     contexts: ['page'],
   })
 }
 
-// Responds to frame-capture requests from the injected screenshot content script.
-// captureVisibleTab must run in the service worker, not in a content script.
+// Full-page capture requests each visible frame from the service worker because
+// captureVisibleTab is not available inside the injected page script.
 chromeApi.runtime.onMessage.addListener((message: unknown, _sender: unknown, sendResponse: (response?: unknown) => void) => {
   if (!message || typeof message !== 'object') return
   const msg = message as { type?: string }
@@ -55,127 +89,8 @@ chromeApi.runtime.onMessage.addListener((message: unknown, _sender: unknown, sen
     .then((dataUrl) => sendResponse({ type: 'screenshot:frame-data', dataUrl }))
     .catch((err: Error) => sendResponse({ type: 'screenshot:error', error: err.message }))
 
-  return true // keep message channel open for async response
+  return true
 })
-
-async function captureAndSendScreenshot(tabId: number, tabUrl: string | undefined, tabTitle: string | undefined) {
-  const [result] = await chromeApi.scripting.executeScript({
-    target: { tabId },
-    func: async () => {
-      // Runs in the content script context — no imports available.
-      // Uses chrome.runtime.sendMessage to request each frame from the service worker.
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cr = ((globalThis as any).browser ?? (globalThis as any).chrome) as {
-        runtime: {
-          sendMessage(
-            msg: object,
-            callback: (resp: { type: string; dataUrl?: string; error?: string }) => void
-          ): void
-          lastError?: { message?: string }
-        }
-      }
-
-      const viewportW = window.innerWidth
-      const viewportH = window.innerHeight
-      const pageW = Math.max(document.documentElement.scrollWidth, viewportW)
-      const pageH = Math.max(document.documentElement.scrollHeight, viewportH)
-
-      function requestCapture(): Promise<string> {
-        return new Promise((resolve, reject) => {
-          cr.runtime.sendMessage({ type: 'screenshot:capture-frame' }, (resp) => {
-            if (cr.runtime.lastError) {
-              reject(new Error(cr.runtime.lastError.message ?? 'Capture failed'))
-              return
-            }
-            if (resp.type === 'screenshot:frame-data' && resp.dataUrl) {
-              resolve(resp.dataUrl)
-            } else {
-              reject(new Error(resp.error ?? 'Unexpected capture response'))
-            }
-          })
-        })
-      }
-
-      const savedScrollX = window.scrollX
-      const savedScrollY = window.scrollY
-
-      // Temporarily convert fixed/sticky elements to absolute so they don't
-      // repeat in every captured frame
-      const frozen: Array<{ el: HTMLElement; before: string }> = []
-      for (const el of document.querySelectorAll<HTMLElement>('*')) {
-        const pos = getComputedStyle(el).position
-        if (pos === 'fixed' || pos === 'sticky') {
-          frozen.push({ el, before: el.style.position })
-          el.style.setProperty('position', 'absolute', 'important')
-        }
-      }
-
-      try {
-        // Lazy-load pass: scroll through once to trigger deferred images/content
-        for (let y = 0; y < pageH; y += viewportH) {
-          window.scrollTo(0, y)
-          await new Promise<void>((r) => setTimeout(r, 80))
-        }
-
-        // Capture pass: stitch viewport-sized frames onto a full-page canvas
-        const canvas = new OffscreenCanvas(pageW, pageH)
-        const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D
-
-        for (let y = 0; y < pageH; y += viewportH) {
-          window.scrollTo(0, y)
-          await new Promise<void>((r) => requestAnimationFrame(() => r()))
-          await new Promise<void>((r) => setTimeout(r, 40))
-
-          const dataUrl = await requestCapture()
-          const imgBlob = await fetch(dataUrl).then((r) => r.blob())
-          const bitmap = await createImageBitmap(imgBlob)
-
-          // Last slice may be shorter than a full viewport
-          const sliceH = Math.min(viewportH, pageH - y)
-          ctx.drawImage(bitmap, 0, 0, viewportW, sliceH, 0, y, viewportW, sliceH)
-          bitmap.close()
-        }
-
-        const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 })
-
-        return await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = () => reject(new Error('Failed to read screenshot blob'))
-          reader.readAsDataURL(blob)
-        })
-      } finally {
-        for (const { el, before } of frozen) {
-          el.style.position = before
-        }
-        window.scrollTo(savedScrollX, savedScrollY)
-      }
-    },
-  })
-
-  const dataUrl = result?.result
-  if (!dataUrl) throw new Error('Screenshot returned no data')
-
-  const config = await getStoredConfig()
-  if (!config) throw new Error('Connect Grain first')
-
-  const canvasId = await getPrivateCanvasId(config)
-  const { url, width, height } = await uploadScreenshot(dataUrl, canvasId, config)
-
-  await sendToGrain(
-    {
-      sourceChannel: 'extension',
-      sourceType: 'image_upload',
-      contentKind: 'image',
-      originalUrl: tabUrl,
-      title: tabTitle,
-      previewImageUrl: url,
-      metadata: { width, height },
-    },
-    config
-  )
-}
 
 async function queueSend(request: SendToGrainRequest) {
   await sendToGrainFromStoredConfig(request)
@@ -194,6 +109,12 @@ void registerContextMenus()
 
 chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
+    const screenshotModes: Partial<Record<string, ScreenshotMode>> = {
+      [MENU_IDS.screenshotViewport]: 'viewport',
+      [MENU_IDS.screenshotFullPage]: 'full_page',
+      [MENU_IDS.screenshotElement]: 'element',
+    }
+
     if (info.menuItemId === MENU_IDS.page) {
       await queueSend({
         sourceChannel: 'extension',
@@ -223,8 +144,9 @@ chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
       return
     }
 
-    if (info.menuItemId === MENU_IDS.screenshot && tab?.id) {
-      await captureAndSendScreenshot(tab.id, tab.url, tab.title)
+    const screenshotMode = screenshotModes[info.menuItemId]
+    if (screenshotMode && tab?.id) {
+      await captureAndSendScreenshot(tab.id, tab.url, tab.title, screenshotMode)
     }
   } catch (error) {
     console.error('Send to Grain failed:', error)

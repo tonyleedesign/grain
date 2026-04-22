@@ -20,6 +20,7 @@ import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from 
 import { Reply, Send, Minus, Pencil, Check } from 'lucide-react'
 import { ChatMessage, CanvasAIChatRequest, CanvasAIToolCall, CanvasAISelectionContext } from '@/types/canvas-ai'
 import { buildSelectionContext } from '@/lib/selection-context'
+import { supabase } from '@/lib/supabase'
 import { streamToShape, executeToolCalls } from '@/lib/canvas-ai-executor'
 import { AISparkleIcon } from './AISparkleIcon'
 import './ai-chat-card.css'
@@ -266,10 +267,14 @@ async function sendChatMessage(
   // Build current selection context
   const currentContext = buildSelectionContext(editor)
 
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData.session?.access_token
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+
   // Call streaming endpoint
   const res = await fetch('/api/canvas-ai', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({
       messages,
       originalContext: shape.props.selectionContext,

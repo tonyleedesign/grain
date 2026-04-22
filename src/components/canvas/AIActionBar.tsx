@@ -7,6 +7,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useEditor, useValue, TLShapeId, createShapeId } from 'tldraw'
 import { Send } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import { buildSelectionContext } from '@/lib/selection-context'
 import { executeToolCalls, createAIShape, streamToShape } from '@/lib/canvas-ai-executor'
 import type { CanvasAIResponse, CanvasAIChatRequest, AISuggestion, ChatMessage } from '@/types/canvas-ai'
@@ -206,6 +207,10 @@ export function AIActionBar({
       const context = buildSelectionContext(editor)
       const selectionCtxJson = JSON.stringify(context)
 
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+
       // Check if message is likely a tool-use action (group, rename, delete, extract)
       const toolPatterns = /\b(group|rename|delete|extract\s*dna)\b/i
       const isToolAction = toolPatterns.test(message)
@@ -217,7 +222,7 @@ export function AIActionBar({
         // Use single-shot endpoint for tool-use actions
         const res = await fetch('/api/canvas-ai', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
           body: JSON.stringify({ message, context, canvasId }),
         })
 
@@ -267,7 +272,7 @@ export function AIActionBar({
 
         const res = await fetch('/api/canvas-ai', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
           body: JSON.stringify({
             messages: chatMessages,
             originalContext: selectionCtxJson,

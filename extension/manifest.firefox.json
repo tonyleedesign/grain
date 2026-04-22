@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Send to Grain",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Capture links, images, and pages into Grain.",
   "icons": {
     "16": "dist/icons/grain-16.png",
