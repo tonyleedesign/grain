@@ -144,8 +144,8 @@ export function SelectableReviewCard({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.35 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, overflow: 'hidden' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.35, overflow: 'hidden' }}>
             {badgeLabel ? (
               <Badge
                 variant="destructive"
