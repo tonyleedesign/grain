@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     appeal_context?: string | null
     observations?: string | null
     dna_data?: unknown
+    dna_version?: string | null
   }
 
   async function getBoardExtraction(board: BoardRow | null) {
@@ -62,13 +63,14 @@ export async function GET(request: NextRequest) {
           appeal_context: string | null
           observations: string | null
           dna_data: unknown
+          dna_version: string | null
         }
       | null = null
 
     if (board.latest_extraction_id) {
       const { data: latestExtraction } = await supabaseServer
         .from('board_extractions')
-        .select('id, medium, use_case, source_context, appeal_context, observations, dna_data')
+        .select('id, medium, use_case, source_context, appeal_context, observations, dna_data, dna_version')
         .eq('id', board.latest_extraction_id)
         .maybeSingle()
 
@@ -78,7 +80,7 @@ export async function GET(request: NextRequest) {
     if (!extraction) {
       const { data: fallbackExtraction } = await supabaseServer
         .from('board_extractions')
-        .select('id, medium, use_case, source_context, appeal_context, observations, dna_data')
+        .select('id, medium, use_case, source_context, appeal_context, observations, dna_data, dna_version')
         .eq('board_id', board.id)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -137,7 +139,10 @@ export async function GET(request: NextRequest) {
         query = query.eq('canvas_id', canvasId)
       }
       const { data } = await query.maybeSingle()
-      pushCandidate(data as BoardRow | null)
+      const board = data as BoardRow | null
+      if (!frameShapeId || !board?.frame_shape_id || board.frame_shape_id === frameShapeId) {
+        pushCandidate(board)
+      }
     }
 
     if (canvasId && frameShapeId) {
@@ -154,7 +159,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (canvasId && name) {
+    if (canvasId && name && !frameShapeId && !boardId) {
       const normalizedName = name.trim()
       const { data } = await supabaseServer
         .from('boards')
@@ -217,6 +222,7 @@ export async function GET(request: NextRequest) {
     appeal_context: extraction?.appeal_context ?? data.appeal_context ?? null,
     observations: extraction?.observations ?? data.observations ?? null,
     dna_data: extraction?.dna_data ?? data.dna_data ?? null,
+    dna_version: extraction?.dna_version ?? data.dna_version ?? null,
     needs_extraction: !(extraction?.dna_data ?? data.dna_data),
   })
 }

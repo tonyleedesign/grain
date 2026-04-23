@@ -2,24 +2,40 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { Copy, Check, FileText, Sparkles, Download } from 'lucide-react'
-import type { Medium, WebAppDNA, ImageGenDNA } from '@/types/dna'
-import { formatForCodeTools, formatForMidjourney, formatReadme, formatStyle, formatComposition, formatAssets } from '@/lib/export-formatters'
+import type { Medium, WebAppDNA, ImageGenDNA, DesignMD } from '@/types/dna'
+import {
+  formatForCodeTools,
+  formatForMidjourney,
+  formatReadme,
+  formatStyle,
+  formatComposition,
+  formatAssets,
+  formatDesignMd,
+  formatDesignPackageReadme,
+  formatDesignAssets,
+  type ExportImage,
+} from '@/lib/export-formatters'
 import { downloadPackage } from '@/lib/download-package'
 import { FeedbackPrompt } from './FeedbackPrompt'
 
 type WebFileTab = 'readme' | 'style' | 'composition' | 'assets'
+type DesignMdTab = 'readme' | 'design' | 'assets'
 
 interface ExportViewProps {
   medium: Medium
-  dna: WebAppDNA | ImageGenDNA
+  dna: WebAppDNA | ImageGenDNA | DesignMD
+  dnaVersion?: string | null
   useCase: string
   boardId: string | null
   imageUrls: string[]
 }
 
-export function ExportView({ medium, dna, useCase, boardId, imageUrls }: ExportViewProps) {
+export function ExportView({ medium, dna, dnaVersion, useCase, boardId, imageUrls }: ExportViewProps) {
   if (medium === 'image') {
     return <ImageExportView dna={dna as ImageGenDNA} useCase={useCase} boardId={boardId} />
+  }
+  if (dnaVersion === 'design-md-v1') {
+    return <WebDesignMdExportView dna={dna as DesignMD} useCase={useCase} boardId={boardId} imageUrls={imageUrls} />
   }
   return <WebExportView dna={dna as WebAppDNA} useCase={useCase} boardId={boardId} imageUrls={imageUrls} />
 }
@@ -80,6 +96,169 @@ function ImageExportView({ dna, useCase, boardId }: { dna: ImageGenDNA; useCase:
   )
 }
 
+// --- Web medium: DESIGN.md format ---
+
+function WebDesignMdExportView({ dna, useCase, boardId, imageUrls }: {
+  dna: DesignMD
+  useCase: string
+  boardId: string | null
+  imageUrls: string[]
+}) {
+  const [activeTab, setActiveTab] = useState<DesignMdTab>('readme')
+  const [copied, setCopied] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [checkedImages, setCheckedImages] = useState<boolean[]>(() => imageUrls.map(() => true))
+
+  useEffect(() => {
+    setCheckedImages(imageUrls.map(() => true))
+  }, [imageUrls])
+
+  const checkedIndices = useMemo(
+    () => checkedImages.reduce<number[]>((acc, checked, i) => checked ? [...acc, i] : acc, []),
+    [checkedImages]
+  )
+
+  const images: ExportImage[] = useMemo(
+    () => checkedIndices.map((idx, pos) => ({ url: imageUrls[idx], index: pos, sourceIndex: idx })),
+    [checkedIndices, imageUrls]
+  )
+
+  const tabContents = useMemo(() => ({
+    readme: formatDesignPackageReadme(dna, useCase || undefined, images.length > 0 ? images : undefined),
+    design: formatDesignMd(dna, images.length > 0 ? images : undefined),
+    assets: formatDesignAssets(dna, images),
+  }), [dna, useCase, images])
+
+  const currentContent = tabContents[activeTab]
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(currentContent)
+    setCopied(true)
+    setShowFeedback(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    try {
+      await downloadPackage({
+        dna,
+        dnaVersion: 'design-md-v1',
+        useCase: useCase || undefined,
+        imageUrls,
+        checkedIndices,
+      })
+      setShowFeedback(true)
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      console.error('Download failed:', err)
+      alert(`Download failed: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const toggleImage = (index: number) => {
+    const next = [...checkedImages]
+    next[index] = !next[index]
+    setCheckedImages(next)
+  }
+
+  const tabs: { key: DesignMdTab; label: string }[] = [
+    { key: 'readme', label: 'README' },
+    { key: 'design', label: 'DESIGN.md' },
+    { key: 'assets', label: 'ASSETS.md' },
+  ]
+
+  return (
+    <div className="flex flex-col gap-3 min-w-0">
+      <div className="flex items-center gap-2 px-1">
+        <Sparkles size={12} style={{ color: 'var(--color-accent)' }} />
+        <span className="text-[11px] font-medium" style={{ color: 'var(--color-text)' }}>
+          Design Package
+        </span>
+      </div>
+
+      <div className="flex gap-1 p-0.5 rounded-md" style={{ backgroundColor: 'var(--color-bg)' }}>
+        {tabs.map(tab => (
+          <FormatButton
+            key={tab.key}
+            active={activeTab === tab.key}
+            onClick={() => { setActiveTab(tab.key); setCopied(false) }}
+          >
+            {tab.label}
+          </FormatButton>
+        ))}
+      </div>
+
+      <div
+        className="text-[10px] px-2 py-1.5 rounded-md leading-relaxed"
+        style={{
+          color: 'var(--color-muted)',
+          backgroundColor: 'var(--color-bg)',
+          border: '1px dashed var(--color-border)',
+        }}
+      >
+        {activeTab === 'readme' && 'Project contract -- paste into an AI tool to establish what to build and the direction rules.'}
+        {activeTab === 'design' && 'YAML tokens + prose rationale. The complete design system specification.'}
+        {activeTab === 'assets' && 'Reference image usage instructions. Tells the downstream AI how to apply each image.'}
+      </div>
+
+      <PreviewBlock content={currentContent} onCopy={handleCopy} copied={copied} />
+
+      {imageUrls.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-medium px-1" style={{ color: 'var(--color-muted)' }}>
+            Include images in export:
+          </span>
+          <div className="flex gap-2 flex-wrap">
+            {imageUrls.map((url, i) => (
+              <label
+                key={i}
+                className="relative cursor-pointer rounded-md overflow-hidden"
+                style={{
+                  border: `2px solid ${checkedImages[i] ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  opacity: checkedImages[i] ? 1 : 0.5,
+                  width: 48,
+                  height: 48,
+                }}
+              >
+                <img src={url} alt={`Reference ${i + 1}`} className="w-full h-full object-cover" />
+                <input
+                  type="checkbox"
+                  checked={checkedImages[i] || false}
+                  onChange={() => toggleImage(i)}
+                  className="absolute top-0.5 left-0.5"
+                  style={{ accentColor: 'var(--color-accent)' }}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={handleDownload}
+        disabled={downloading}
+        className="flex items-center justify-center gap-2 py-2 rounded-md cursor-pointer text-[12px] font-medium"
+        style={{
+          backgroundColor: 'var(--color-accent)',
+          color: 'var(--color-surface)',
+          border: 'none',
+          fontFamily: 'var(--font-family)',
+          opacity: downloading ? 0.7 : 1,
+        }}
+      >
+        <Download size={13} />
+        {downloading ? 'Downloading...' : 'Download Package'}
+      </button>
+
+      {showFeedback && <FeedbackPrompt boardId={boardId} />}
+    </div>
+  )
+}
+
 // --- Web medium: new file tabs UI ---
 
 function WebExportView({ dna, useCase, boardId, imageUrls }: {
@@ -100,9 +279,7 @@ function WebExportView({ dna, useCase, boardId, imageUrls }: {
 
   // Reset when DNA is regenerated or images change
   useEffect(() => {
-    setCheckedImages(imageUrls.map((_, i) => {
-      return true
-    }))
+    setCheckedImages(imageUrls.map(() => true))
   }, [dna.image_roles, imageUrls])
 
   const checkedIndices = useMemo(

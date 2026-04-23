@@ -130,8 +130,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ id: requestedBoard.id, repaired: false })
       }
 
-      const requestedExtraction = await getBoardExtraction(requestedBoard as BoardRow)
-      if (requestedExtraction || hasDirectBoardDna(requestedBoard as BoardRow)) {
+      if (!requestedBoard.frame_shape_id) {
         const { error: attachError } = await supabaseServer
           .from('boards')
           .update({
@@ -164,7 +163,7 @@ export async function POST(request: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(50)
 
-  candidates = (exactCandidates as BoardRow[] | null) || []
+  candidates = ((exactCandidates as BoardRow[] | null) || []).filter((candidate) => !candidate.frame_shape_id)
 
   if (!candidates.length) {
     const { data: fuzzyCandidates } = await supabaseServer
@@ -175,11 +174,26 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(50)
 
-    candidates = (fuzzyCandidates as BoardRow[] | null) || []
+    candidates = ((fuzzyCandidates as BoardRow[] | null) || []).filter((candidate) => !candidate.frame_shape_id)
   }
 
   if (!candidates.length) {
-    return NextResponse.json({ error: 'No board candidates found' }, { status: 404 })
+    const { data: insertedBoard, error: insertBoardError } = await supabaseServer
+      .from('boards')
+      .insert({
+        canvas_id: canvasId,
+        frame_shape_id: frameShapeId,
+        name: normalizedFrameName,
+      })
+      .select('id')
+      .single()
+
+    if (insertBoardError || !insertedBoard) {
+      console.error('Board repair insert error:', insertBoardError)
+      return NextResponse.json({ error: 'Failed to create board identity' }, { status: 500 })
+    }
+
+    return NextResponse.json({ id: insertedBoard.id, repaired: true })
   }
 
   let bestCandidate: BoardRow | null = null

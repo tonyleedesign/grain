@@ -17,10 +17,15 @@ export function isManuallyGroupableShape(editor: Editor, shape: TLShape) {
   return !parentShape || parentShape.type !== 'frame'
 }
 
-async function createBoardRecord(canvasId: string, boardName: string, frameShapeId: string) {
+async function createBoardRecord(
+  canvasId: string,
+  boardName: string,
+  frameShapeId: string,
+  authHeaders?: Record<string, string> | null
+) {
   const response = await fetch('/api/boards', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(authHeaders || {}) },
     body: JSON.stringify({ name: boardName, canvasId, frameShapeId }),
   })
 
@@ -55,7 +60,8 @@ export async function groupShapesIntoBoard(
   editor: Editor,
   canvasId: string,
   shapes: TLShape[],
-  boardName = 'Untitled Board'
+  boardName = 'Untitled Board',
+  authHeaders?: Record<string, string> | null
 ) {
   const artifacts = shapes.filter((shape) => isManuallyGroupableShape(editor, shape))
   if (!artifacts.length) return null
@@ -95,7 +101,7 @@ export async function groupShapesIntoBoard(
     HEADER_HEIGHT
 
   const frameId = createShapeId()
-  const { id: boardId } = await createBoardRecord(canvasId, boardName, frameId)
+  const { id: boardId } = await createBoardRecord(canvasId, boardName, frameId, authHeaders)
 
   editor.run(() => {
     editor.createShape({

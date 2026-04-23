@@ -129,11 +129,84 @@ export interface ImageGenDNA {
   reasoning?: DNAReasoning                         // Two-pass reasoning trace
 }
 
+// --- Design MD (design.md standard) ---
+
+export interface TypographyToken {
+  fontFamily: string
+  fontSize: string
+  fontWeight: number
+  lineHeight?: string
+  letterSpacing?: string
+}
+
+export interface ComponentToken {
+  backgroundColor?: string
+  textColor?: string
+  typography?: string
+  rounded?: string
+  padding?: string
+  size?: string
+  height?: string
+  width?: string
+  [key: string]: string | undefined
+}
+
+export interface DesignMDTokens {
+  colors: Record<string, string>
+  typography: {
+    'headline-display'?: TypographyToken
+    'headline-lg'?: TypographyToken
+    'body-lg'?: TypographyToken
+    'body-md'?: TypographyToken
+    'label-md'?: TypographyToken
+    [key: string]: TypographyToken | undefined
+  }
+  rounded: {
+    sm?: string
+    md?: string
+    lg?: string
+    xl?: string
+    full?: string
+    [key: string]: string | undefined
+  }
+  spacing: {
+    xs?: string
+    sm?: string
+    md?: string
+    lg?: string
+    xl?: string
+    [key: string]: string | undefined
+  }
+  components?: Record<string, ComponentToken>
+}
+
+export interface DesignMD {
+  name: string
+  tokens: DesignMDTokens
+
+  overview: string
+  colors: string
+  typography: string
+  layoutSpacing: string
+  elevationDepth: string
+  shapes: string
+  components: string
+  dosAndDonts: string
+
+  creativeDirection: string
+  motion: string
+
+  // Internal Grain-only fields. Stored in dna_data and shown in the panel, but not exported to DESIGN.md.
+  reasoning?: DNAReasoning
+  evidence?: PatternEvidence[]
+}
+
 // --- Discriminated union ---
 
 export type BoardDNA =
-  | { medium: 'web'; dna: WebAppDNA }
-  | { medium: 'image'; dna: ImageGenDNA }
+  | { medium: 'web'; dna: WebAppDNA; dnaVersion?: null }
+  | { medium: 'web'; dna: DesignMD; dnaVersion: 'design-md-v1' }
+  | { medium: 'image'; dna: ImageGenDNA; dnaVersion?: null }
 
 // --- Organize result (grouping only, no DNA) ---
 

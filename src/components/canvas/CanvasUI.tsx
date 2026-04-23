@@ -182,7 +182,13 @@ export function CanvasUI({ canvasId, accessToken, callbacksRef }: CanvasUIProps)
 
   return (
     <>
-      {!aiBarVisible && <GrainSelectionToolbar canvasId={canvasId} onAskAI={handleAskAI} />}
+      {!aiBarVisible && (
+        <GrainSelectionToolbar
+          canvasId={canvasId}
+          onAskAI={handleAskAI}
+          getAuthHeaders={getAuthHeadersForHooks}
+        />
+      )}
       <AIActionBar
         canvasId={canvasId}
         onExtractDna={dnaPanel.handleExtractDna}

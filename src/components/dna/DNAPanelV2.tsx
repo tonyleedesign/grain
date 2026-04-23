@@ -12,10 +12,10 @@ import { motion } from 'framer-motion'
 import { X, RefreshCw, Pencil, Sparkles, FileDown, RotateCcw } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Medium, WebAppDNA, ImageGenDNA } from '@/types/dna'
+import { Medium, WebAppDNA, ImageGenDNA, DesignMD } from '@/types/dna'
 import { getBoardArtifactCount, getBoardImageUrls } from '@/lib/getBoardImages'
 import { useTheme } from '@/context/ThemeContext'
-import { buildThemeFromWebDna } from '@/lib/themeFromDna'
+import { buildThemeFromDesignMd, buildThemeFromWebDna } from '@/lib/themeFromDna'
 import { MediumPicker } from './MediumPicker'
 import { DesignerView } from './DesignerView'
 import { ExportView } from './ExportView'
@@ -53,7 +53,8 @@ export function DNAPanelV2({
   const [boardId, setBoardId] = useState<string | null>(initialBoardId || null)
   const [medium, setMedium] = useState<Medium | null>(null)
   const [useCase, setUseCase] = useState<string>('')
-  const [dna, setDna] = useState<WebAppDNA | ImageGenDNA | null>(null)
+  const [dna, setDna] = useState<WebAppDNA | ImageGenDNA | DesignMD | null>(null)
+  const [dnaVersion, setDnaVersion] = useState<string | null>(null)
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [analyzableVisualCount, setAnalyzableVisualCount] = useState(0)
   const [artifactCount, setArtifactCount] = useState(0)
@@ -122,31 +123,97 @@ export function DNAPanelV2({
     }
   }, [onExtractionStateChange, state])
 
-  // Intercept clipboard and keyboard events at the native DOM level to prevent
-  // tldraw's document-level listeners from capturing copy/paste inside the panel.
+  // Intercept panel keyboard/clipboard events before tldraw's document-level
+  // shortcuts can turn them into canvas copy/paste actions.
   useEffect(() => {
-    const el = panelRef.current
-    if (!el) return
-
-    const stopNative = (e: Event) => e.stopPropagation()
-    const stopKeyboard = (e: KeyboardEvent) => {
-      // Let all keyboard events inside the panel stay in the panel
-      // This prevents tldraw from intercepting Ctrl+C/V/X and other shortcuts
-      e.stopPropagation()
+    const isPanelEvent = (event: Event) => {
+      const el = panelRef.current
+      const target = event.target as Node | null
+      return Boolean(el && target && el.contains(target))
     }
 
-    el.addEventListener('copy', stopNative, true)
-    el.addEventListener('cut', stopNative, true)
-    el.addEventListener('paste', stopNative, true)
-    el.addEventListener('keydown', stopKeyboard, true)
-    el.addEventListener('keyup', stopKeyboard, true)
+    const stopKeyboard = (e: KeyboardEvent) => {
+      if (!isPanelEvent(e)) return
+      e.stopPropagation()
+      e.stopImmediatePropagation()
+    }
+
+    const getSelectedPanelText = () => {
+      const selection = window.getSelection()
+      if (!selection || selection.rangeCount === 0) return ''
+      const el = panelRef.current
+      if (!el) return ''
+
+      const range = selection.getRangeAt(0)
+      if (!el.contains(range.commonAncestorContainer)) return ''
+      return selection.toString()
+    }
+
+    const getEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return null
+      if (target.readOnly || target.disabled) return null
+      return target
+    }
+
+    const handleCopy = (event: ClipboardEvent) => {
+      if (!isPanelEvent(event)) return
+
+      const selectedText = getSelectedPanelText()
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      event.clipboardData?.setData('text/plain', selectedText)
+    }
+
+    const handleCut = (event: ClipboardEvent) => {
+      if (!isPanelEvent(event)) return
+
+      const target = getEditableTarget(event.target)
+      const selectedText = target
+        ? target.value.slice(target.selectionStart ?? 0, target.selectionEnd ?? 0)
+        : getSelectedPanelText()
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      event.clipboardData?.setData('text/plain', selectedText)
+
+      if (!target || !selectedText) return
+      const start = target.selectionStart ?? 0
+      const end = target.selectionEnd ?? 0
+      target.setRangeText('', start, end, 'start')
+      target.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+
+    const handlePaste = (event: ClipboardEvent) => {
+      if (!isPanelEvent(event)) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+
+      const target = getEditableTarget(event.target)
+      const text = event.clipboardData?.getData('text/plain') ?? ''
+      if (!target || !text) return
+
+      const start = target.selectionStart ?? target.value.length
+      const end = target.selectionEnd ?? target.value.length
+      target.setRangeText(text, start, end, 'end')
+      target.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+
+    window.addEventListener('copy', handleCopy, true)
+    window.addEventListener('cut', handleCut, true)
+    window.addEventListener('paste', handlePaste, true)
+    window.addEventListener('keydown', stopKeyboard, true)
+    window.addEventListener('keyup', stopKeyboard, true)
 
     return () => {
-      el.removeEventListener('copy', stopNative, true)
-      el.removeEventListener('cut', stopNative, true)
-      el.removeEventListener('paste', stopNative, true)
-      el.removeEventListener('keydown', stopKeyboard, true)
-      el.removeEventListener('keyup', stopKeyboard, true)
+      window.removeEventListener('copy', handleCopy, true)
+      window.removeEventListener('cut', handleCut, true)
+      window.removeEventListener('paste', handlePaste, true)
+      window.removeEventListener('keydown', stopKeyboard, true)
+      window.removeEventListener('keyup', stopKeyboard, true)
     }
   }, [])
 
@@ -163,6 +230,7 @@ export function DNAPanelV2({
     setMedium(null)
     setUseCase('')
     setDna(null)
+    setDnaVersion(null)
     setError(null)
     setActiveTab('designer')
     setSourceContext('')
@@ -255,6 +323,7 @@ export function DNAPanelV2({
             setSourceContext(data.source_context || '')
             setAppealContext(data.appeal_context || '')
             setDna(data.dna_data)
+            setDnaVersion(data.dna_version ?? null)
             setObservations(data.observations || null)
             setState('ready')
           }
@@ -320,11 +389,13 @@ export function DNAPanelV2({
 
         const result = await response.json() as {
           boardId?: string
-          dna: WebAppDNA | ImageGenDNA
+          dna: WebAppDNA | ImageGenDNA | DesignMD
+          dna_version?: string | null
           observations?: string | null
         }
         syncResolvedBoard(result.boardId)
         setDna(result.dna)
+        setDnaVersion(result.dna_version ?? null)
         setObservations(result.observations || null)
         setState('ready')
       } catch (err) {
@@ -375,9 +446,10 @@ export function DNAPanelV2({
         if (!res.ok) return res.json().then((err) => { throw new Error(err.error || 'Extraction failed') })
         return res.json()
       })
-      .then((result: { boardId?: string; dna: WebAppDNA | ImageGenDNA; observations?: string | null }) => {
+      .then((result: { boardId?: string; dna: WebAppDNA | ImageGenDNA | DesignMD; dna_version?: string | null; observations?: string | null }) => {
         syncResolvedBoard(result.boardId)
         setDna(result.dna)
+        setDnaVersion(result.dna_version ?? null)
         setObservations(result.observations || null)
         if (reason) setFeedback(reason)
         setState('ready')
@@ -403,9 +475,19 @@ export function DNAPanelV2({
     let colorHexes: string[] = []
     let fontInfo = ''
     if (medium === 'web') {
-      const w = dna as WebAppDNA
-      colorHexes = w.color_palette.colors.map((c) => c.hex)
-      fontInfo = `${w.typography.display.family} / ${w.typography.body.family}`
+      if (dnaVersion === 'design-md-v1') {
+        const d = dna as DesignMD
+        colorHexes = Object.values(d.tokens.colors).slice(0, 5)
+        const displayToken = d.tokens.typography['headline-display'] || d.tokens.typography['headline-lg']
+        const bodyToken = d.tokens.typography['body-lg'] || d.tokens.typography['body-md']
+        fontInfo = displayToken && bodyToken
+          ? `${displayToken.fontFamily} / ${bodyToken.fontFamily}`
+          : displayToken?.fontFamily || bodyToken?.fontFamily || ''
+      } else {
+        const w = dna as WebAppDNA
+        colorHexes = w.color_palette.colors.map((c) => c.hex)
+        fontInfo = `${w.typography.display.family} / ${w.typography.body.family}`
+      }
     } else {
       const ig = dna as ImageGenDNA
       colorHexes = ig.color_palette.colors
@@ -424,14 +506,16 @@ export function DNAPanelV2({
         boardId: boardId || '',
         boardName,
         medium,
-        directionSummary: dna.direction_summary || '',
-        moodTags: JSON.stringify(dna.mood_tags || []),
-        antiPatterns: JSON.stringify(dna.anti_patterns || []),
+        directionSummary: dnaVersion === 'design-md-v1'
+          ? ((dna as DesignMD).overview || '').slice(0, 80)
+          : ((dna as WebAppDNA | ImageGenDNA).direction_summary || ''),
+        moodTags: JSON.stringify(dnaVersion === 'design-md-v1' ? [] : ((dna as WebAppDNA | ImageGenDNA).mood_tags || [])),
+        antiPatterns: JSON.stringify(dnaVersion === 'design-md-v1' ? [] : ((dna as WebAppDNA | ImageGenDNA).anti_patterns || [])),
         colorHexes: JSON.stringify(colorHexes),
         fontInfo,
       },
     })
-  }, [boardId, dna, medium, boardName, editor, frameShapeId])
+  }, [boardId, dna, dnaVersion, medium, boardName, editor, frameShapeId])
 
   const panelContent = (
     <motion.div
@@ -469,10 +553,18 @@ export function DNAPanelV2({
         style={{ borderBottom: '1px solid var(--color-border)' }}
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {dna && medium === 'web' && (dna as WebAppDNA).color_palette?.colors?.[0] && (
+          {dna && medium === 'web' && (
+            dnaVersion === 'design-md-v1'
+              ? Object.values((dna as DesignMD).tokens.colors)[0]
+              : (dna as WebAppDNA).color_palette?.colors?.[0]?.hex
+          ) && (
             <div
               className="w-2 h-2 rounded-full shrink-0"
-              style={{ backgroundColor: (dna as WebAppDNA).color_palette.colors[0].hex }}
+              style={{
+                backgroundColor: dnaVersion === 'design-md-v1'
+                  ? Object.values((dna as DesignMD).tokens.colors)[0]
+                  : (dna as WebAppDNA).color_palette.colors[0].hex,
+              }}
             />
           )}
           {dna && medium === 'image' && (dna as ImageGenDNA).color_palette?.colors?.[0] && (
@@ -560,6 +652,7 @@ export function DNAPanelV2({
                   <DesignerView
                     medium={medium}
                     dna={dna}
+                    dnaVersion={dnaVersion}
                     imageUrls={imageUrls}
                   />
                 </div>
@@ -571,6 +664,7 @@ export function DNAPanelV2({
                   <ExportView
                     medium={medium}
                     dna={dna}
+                    dnaVersion={dnaVersion}
                     useCase={useCase}
                     boardId={boardId}
                     imageUrls={imageUrls}
@@ -645,8 +739,11 @@ export function DNAPanelV2({
           </ActionButton>
           {medium === 'web' && (
             <ActionButton icon={<Sparkles size={13} />} onClick={() => {
-              const webDna = dna as WebAppDNA
-              setTheme(buildThemeFromWebDna(webDna))
+              setTheme(
+                dnaVersion === 'design-md-v1'
+                  ? buildThemeFromDesignMd(dna as DesignMD)
+                  : buildThemeFromWebDna(dna as WebAppDNA)
+              )
             }}>
               Apply to Grain
             </ActionButton>

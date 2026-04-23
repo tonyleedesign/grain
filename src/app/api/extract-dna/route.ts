@@ -10,10 +10,10 @@ import { Medium } from '@/types/dna'
 import { supabaseServer } from '@/lib/supabase-server'
 import {
   OBSERVE_SYSTEM,
-  WEB_SYNTHESIZE_SYSTEM,
+  DESIGN_MD_SYNTHESIZE_SYSTEM,
   IMAGE_GEN_SYNTHESIZE_SYSTEM,
   buildObservePrompt,
-  buildWebAppSynthesizePrompt,
+  buildDesignMdSynthesizePrompt,
   buildImageGenSynthesizePrompt,
 } from './prompts'
 import { matchFonts, formatFontShortlist } from '@/lib/font-matcher'
@@ -78,19 +78,27 @@ async function runSynthesis(
   previousDna?: Record<string, unknown>,
   fontShortlist?: string
 ): Promise<Record<string, unknown>> {
-  const systemPrompt = medium === 'web' ? WEB_SYNTHESIZE_SYSTEM : IMAGE_GEN_SYNTHESIZE_SYSTEM
-  const promptBuilder = medium === 'web' ? buildWebAppSynthesizePrompt : buildImageGenSynthesizePrompt
-
-  const userPrompt = promptBuilder(
-    observations,
-    imageCount,
-    useCase,
-    sourceContext,
-    appealContext,
-    feedback,
-    previousDna,
-    medium === 'web' ? fontShortlist : undefined
-  )
+  const systemPrompt = medium === 'web' ? DESIGN_MD_SYNTHESIZE_SYSTEM : IMAGE_GEN_SYNTHESIZE_SYSTEM
+  const userPrompt = medium === 'web'
+    ? buildDesignMdSynthesizePrompt(
+        observations,
+        imageCount,
+        useCase,
+        sourceContext,
+        appealContext,
+        feedback,
+        previousDna,
+        fontShortlist
+      )
+    : buildImageGenSynthesizePrompt(
+        observations,
+        imageCount,
+        useCase,
+        sourceContext,
+        appealContext,
+        feedback,
+        previousDna
+      )
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -205,17 +213,16 @@ export async function POST(request: NextRequest) {
       fontShortlist
     )
 
-    // Resolve or create the canonical board identity row first. Prefer
-    // frame-linked boards over name-only matches so a single canvas board
-    // cannot silently fan out into duplicate DB rows.
-    let boardId: string | null = requestedBoardId || null
+    // Resolve or create the canonical board identity row first. The selected
+    // frame is authoritative; board names are not unique on a canvas.
+    let boardId: string | null = null
 
-    let existingBoard: { id: string } | null = null
+    let existingBoard: { id: string; frame_shape_id?: string | null } | null = null
 
-    if (!boardId && frameShapeId) {
+    if (frameShapeId) {
       const { data: byFrame, error: byFrameError } = await supabaseServer
         .from('boards')
-        .select('id')
+        .select('id, frame_shape_id')
         .eq('canvas_id', canvasId)
         .eq('frame_shape_id', frameShapeId)
         .order('created_at', { ascending: false })
@@ -229,12 +236,30 @@ export async function POST(request: NextRequest) {
       existingBoard = byFrame
     }
 
-    if (!existingBoard && !boardId && boardName) {
+    if (!existingBoard && requestedBoardId) {
+      const { data: byId, error: byIdError } = await supabaseServer
+        .from('boards')
+        .select('id, frame_shape_id')
+        .eq('canvas_id', canvasId)
+        .eq('id', requestedBoardId)
+        .maybeSingle()
+
+      if (byIdError) {
+        console.error('Board lookup by id error:', byIdError)
+      }
+
+      if (byId?.id && (!byId.frame_shape_id || byId.frame_shape_id === frameShapeId)) {
+        existingBoard = byId
+      }
+    }
+
+    if (!existingBoard && boardName) {
       const { data: byName, error: byNameError } = await supabaseServer
         .from('boards')
-        .select('id')
+        .select('id, frame_shape_id')
         .eq('canvas_id', canvasId)
         .eq('name', boardName)
+        .is('frame_shape_id', null)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -290,6 +315,7 @@ export async function POST(request: NextRequest) {
         source_context: sourceContext || null,
         appeal_context: appealContext || null,
         dna_data: dna,
+        dna_version: medium === 'web' ? 'design-md-v1' : null,
         observations,
       })
       .select('id')
@@ -308,7 +334,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ boardId, medium, dna, observations })
+    return NextResponse.json({
+      boardId,
+      medium,
+      dna,
+      observations,
+      dna_version: medium === 'web' ? 'design-md-v1' : null,
+    })
   } catch (error) {
     console.error('Extract DNA error:', error)
     return NextResponse.json(
