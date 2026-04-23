@@ -23,9 +23,15 @@ interface GrainImageToolbarInnerProps {
   canvasId: string
   onAskAI: () => void
   imageShapeId: TLImageShape['id']
+  getAuthHeaders?: () => Promise<Record<string, string> | null>
 }
 
-function GrainImageToolbarInner({ canvasId, onAskAI, imageShapeId }: GrainImageToolbarInnerProps) {
+function GrainImageToolbarInner({
+  canvasId,
+  onAskAI,
+  imageShapeId,
+  getAuthHeaders,
+}: GrainImageToolbarInnerProps) {
   const editor = useEditor()
   const { addToast } = useToasts()
   const isInCropTool = useValue('editor path', () => editor.isIn('select.crop.'), [editor])
@@ -47,7 +53,8 @@ function GrainImageToolbarInner({ canvasId, onAskAI, imageShapeId }: GrainImageT
     if (!image) return
 
     try {
-      const result = await groupShapesIntoBoard(editor, canvasId, [image])
+      const authHeaders = getAuthHeaders ? await getAuthHeaders() : null
+      const result = await groupShapesIntoBoard(editor, canvasId, [image], 'Untitled Board', authHeaders)
       if (!result) return
 
       addToast({
@@ -62,7 +69,7 @@ function GrainImageToolbarInner({ canvasId, onAskAI, imageShapeId }: GrainImageT
         severity: 'error',
       })
     }
-  }, [addToast, canvasId, editor, imageShapeId])
+  }, [addToast, canvasId, editor, getAuthHeaders, imageShapeId])
 
   // When in crop mode or editing alt text, don't show the AI button
   if (isInCropTool || isEditingAltText) {
@@ -117,7 +124,11 @@ function GrainImageToolbarInner({ canvasId, onAskAI, imageShapeId }: GrainImageT
  * Creates a GrainImageToolbar component factory.
  * The returned component is used as the `ImageToolbar` override in TLComponents.
  */
-export function createGrainImageToolbar(onAskAI: () => void, canvasId: string) {
+export function createGrainImageToolbar(
+  onAskAI: () => void,
+  canvasId: string,
+  getAuthHeaders?: () => Promise<Record<string, string> | null>
+) {
   return function GrainImageToolbar() {
     const editor = useEditor()
     const imageShapeId = useValue(
@@ -134,7 +145,12 @@ export function createGrainImageToolbar(onAskAI: () => void, canvasId: string) {
 
     return (
       <DefaultImageToolbar>
-        <GrainImageToolbarInner canvasId={canvasId} onAskAI={onAskAI} imageShapeId={imageShapeId} />
+        <GrainImageToolbarInner
+          canvasId={canvasId}
+          onAskAI={onAskAI}
+          imageShapeId={imageShapeId}
+          getAuthHeaders={getAuthHeaders}
+        />
       </DefaultImageToolbar>
     )
   }

@@ -11,16 +11,9 @@ interface GetBoardImageUrlsOptions {
 }
 
 export function getBoardImageUrls(editor: Editor, options: string | GetBoardImageUrlsOptions): string[] {
-  const allShapes = editor.getCurrentPageShapes()
   const config = typeof options === 'string' ? { frameName: options } : options
 
-  const frame = allShapes.find((s) => {
-    if (s.type !== 'frame') return false
-    if (config.frameId && s.id === config.frameId) return true
-    if (config.boardId && getBoardIdFromMeta(s) === config.boardId) return true
-    if (config.frameName && (s.props as { name?: string }).name === config.frameName) return true
-    return false
-  })
+  const frame = getBoardFrame(editor, config)
   if (!frame) return []
 
   // Get child visuals inside this frame. DNA extraction can observe native image
@@ -63,16 +56,8 @@ function isCountableBoardArtifact(shape: TLShape | undefined): boolean {
 }
 
 export function getBoardArtifactCount(editor: Editor, options: string | GetBoardImageUrlsOptions): number {
-  const allShapes = editor.getCurrentPageShapes()
   const config = typeof options === 'string' ? { frameName: options } : options
-
-  const frame = allShapes.find((s) => {
-    if (s.type !== 'frame') return false
-    if (config.frameId && s.id === config.frameId) return true
-    if (config.boardId && getBoardIdFromMeta(s) === config.boardId) return true
-    if (config.frameName && (s.props as { name?: string }).name === config.frameName) return true
-    return false
-  })
+  const frame = getBoardFrame(editor, config)
 
   if (!frame) return 0
 
@@ -81,4 +66,28 @@ export function getBoardArtifactCount(editor: Editor, options: string | GetBoard
     .map((childId) => editor.getShape(childId as TLShapeId))
     .filter((shape): shape is TLShape => isCountableBoardArtifact(shape))
     .length
+}
+
+function getBoardFrame(editor: Editor, config: GetBoardImageUrlsOptions) {
+  const allShapes = editor.getCurrentPageShapes()
+
+  if (config.frameId) {
+    const frame = editor.getShape(config.frameId as TLShapeId)
+    return frame?.type === 'frame' ? frame : null
+  }
+
+  if (config.boardId) {
+    const frame = allShapes.find((shape) => {
+      return shape.type === 'frame' && getBoardIdFromMeta(shape) === config.boardId
+    })
+    if (frame) return frame
+  }
+
+  if (config.frameName) {
+    return allShapes.find((shape) => {
+      return shape.type === 'frame' && (shape.props as { name?: string }).name === config.frameName
+    }) || null
+  }
+
+  return null
 }

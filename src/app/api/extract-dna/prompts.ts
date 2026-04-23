@@ -112,6 +112,27 @@ ${IMAGE_GEN_AXES}
 
 ${QUALITY_GATES}`
 
+export const DESIGN_MD_SYNTHESIZE_SYSTEM = `You are a design system synthesizer. You translate written visual observations from reference images into a structured design.md design system.
+
+A design.md has two layers:
+1. YAML tokens — exact machine-readable values using the official design.md schema
+2. Prose sections — human-readable rationale explaining why those choices exist and how to apply them
+
+The tokens say WHAT. The prose must say WHY: emotional intent, design personality, spatial philosophy, and drift boundaries.
+
+Use official design.md token property names:
+- Typography: fontFamily, fontSize, fontWeight, lineHeight, letterSpacing
+- Components: backgroundColor, textColor, typography, rounded, padding, size, height, width
+- References: {colors.primary}, {rounded.md}, {typography.label-md}
+
+Color token keys must be semantic for tooling compatibility. Use names like primary, on-primary, secondary, accent, surface, on-surface, muted, error. Evocative color names belong in prose only.
+
+${ANTI_ARCHETYPE}
+
+${WEB_AXES}
+
+${QUALITY_GATES}`
+
 export function buildWebAppSynthesizePrompt(
   observations: string,
   imageCount: number,
@@ -295,6 +316,130 @@ FONT CANDIDATES — choose display and body fonts from this list ONLY:
 ${fontShortlist}
 ` : ''}
 Return ONLY valid JSON, no markdown fences, no explanation.`
+}
+
+export function buildDesignMdSynthesizePrompt(
+  observations: string,
+  imageCount: number,
+  useCase?: string,
+  sourceContext?: string,
+  appealContext?: string,
+  feedback?: string,
+  previousDna?: Record<string, unknown>,
+  fontShortlist?: string
+): string {
+  const useCaseBlock = useCase
+    ? `\nThe user is building: "${useCase}"\nLet this shape token choices and prose rationale. The design system must serve this specific use case.\n`
+    : ''
+
+  const sourceBlock = sourceContext
+    ? `\nReference context: "${sourceContext}" — use this to inform era and cultural references in prose.\n`
+    : ''
+
+  const appealBlock = appealContext
+    ? `\nThe user said what draws them to these images: "${appealContext}"\nThis is the priority signal for resolving ambiguity. Amplify what they're drawn to.\n`
+    : ''
+
+  let feedbackBlock = ''
+  if (feedback) {
+    feedbackBlock = `\n\nIMPORTANT — the user rejected the previous extraction: "${feedback}"\nDo not repeat the rejected direction.`
+    if (previousDna) {
+      feedbackBlock += `\n\nREJECTED extraction:\n${JSON.stringify(previousDna, null, 2)}`
+    }
+  }
+
+  return `Here are visual observations from ${imageCount} image${imageCount !== 1 ? 's' : ''}:
+
+---
+${observations}
+---
+${useCaseBlock}${sourceBlock}${appealBlock}${feedbackBlock}
+
+Synthesize these into a design.md design system.
+
+Return a JSON object with this exact structure:
+
+{
+  "reasoning": {
+    "per_image": ["One sentence per image — the single most distinctive visual quality, literal not interpreted"],
+    "repeated_signals": "What visual patterns appeared consistently across images",
+    "tensions": "Where images disagreed or pulled in different directions",
+    "synthesis": "How you resolved tensions — what you amplified, what you deprioritized, and why",
+    "archetype_check": "The nearest design archetype + specifically how THIS collection differs from that template"
+  },
+  "evidence": [
+    { "image_index": 0, "quality": "2-4 words", "region_hint": "center|top-left|top-right|bottom-left|bottom-right|top|bottom|left|right|background", "conflict": "optional — what this image disagrees on vs the others" }
+  ],
+  "name": "2-5 words, human-readable design system name",
+  "tokens": {
+    "colors": {
+      "primary": "#1a1a2e",
+      "on-primary": "#ffffff",
+      "secondary": "#6c7278",
+      "accent": "#b8422e",
+      "surface": "#f7f5f2",
+      "on-surface": "#1a1c1e"
+    },
+    "typography": {
+      "headline-display": { "fontFamily": "Playfair Display", "fontSize": "56px", "fontWeight": 700, "lineHeight": "1.1", "letterSpacing": "-0.02em" },
+      "headline-lg": { "fontFamily": "Playfair Display", "fontSize": "36px", "fontWeight": 600, "lineHeight": "1.2" },
+      "body-lg": { "fontFamily": "Inter", "fontSize": "18px", "fontWeight": 400, "lineHeight": "1.6" },
+      "body-md": { "fontFamily": "Inter", "fontSize": "16px", "fontWeight": 400, "lineHeight": "1.6" },
+      "label-md": { "fontFamily": "Inter", "fontSize": "12px", "fontWeight": 500, "lineHeight": "1.4", "letterSpacing": "0.06em" }
+    },
+    "rounded": {
+      "sm": "4px",
+      "md": "8px",
+      "lg": "16px",
+      "xl": "24px",
+      "full": "9999px"
+    },
+    "spacing": {
+      "xs": "4px",
+      "sm": "8px",
+      "md": "16px",
+      "lg": "32px",
+      "xl": "64px"
+    },
+    "components": {
+      "button-primary": {
+        "backgroundColor": "{colors.primary}",
+        "textColor": "{colors.on-primary}",
+        "typography": "{typography.label-md}",
+        "rounded": "{rounded.md}",
+        "padding": "12px 24px"
+      }
+    }
+  },
+  "overview": "2-3 paragraphs. Open with the single most distinctive quality. Describe the emotional register. Name what makes it unmistakable. End with what it refuses to be.",
+  "colors": "Describe each color by emotional role, not hex value. Use evocative names in prose only. Explain hierarchy and mood.",
+  "typography": "Describe each typeface as a personality. Explain hierarchy, readability, and contrast or harmony.",
+  "layoutSpacing": "Describe spatial philosophy, density, grid behavior, and relationship to user attention.",
+  "elevationDepth": "Describe shadow/layering strategy or the flat-design alternative.",
+  "shapes": "Describe what the radius scale communicates and where sharpness or softness belongs.",
+  "components": "Describe key interactive elements in terms of feel and behavior.",
+  "dosAndDonts": "3-5 directional rules. Format each as: 'Favor [quality] — not [drift]'.",
+  "creativeDirection": "Describe mood, cultural references, visual metaphors, and decision-making lens.",
+  "motion": "Describe animation philosophy, timing, easing, and what motion would feel wrong."
+}
+
+Token rules:
+- colors: 5-7 semantic tokens. Must include primary. Prefer primary, on-primary, secondary, accent, surface, on-surface, muted, error. Exact hex only.
+- typography: include all 5 levels. Use official design.md keys. fontFamily must be a real Google Font name.
+- rounded: all 5 scales required.
+- spacing: all 5 scales required.
+- components: 1-3 key components using official component props and root-path references.
+- evidence: 3-5 items. image_index is 0-based. quality is 2-4 words max. conflict is optional, only when that image genuinely pulls against the others.
+
+Prose rules:
+- Every prose field explains WHY, not WHAT.
+- Evocative color names belong in prose only.
+- No markdown headings inside prose fields.
+- Be specific enough that this could only describe this board.
+${fontShortlist ? `\nFont candidates — choose fontFamily names from this list only:\n${fontShortlist}\n` : ''}
+${COMMITMENT_INSTRUCTIONS}
+
+Return ONLY valid JSON. No markdown fences. No explanation.`
 }
 
 export function buildImageGenSynthesizePrompt(

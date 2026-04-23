@@ -1,5 +1,5 @@
 import { defaultTheme, GrainTheme } from '@/config/theme'
-import { WebAppDNA } from '@/types/dna'
+import { DesignMD, WebAppDNA } from '@/types/dna'
 import { buildGoogleFontUrl } from '@/lib/google-fonts'
 
 type RGB = { r: number; g: number; b: number }
@@ -84,6 +84,14 @@ function normalizeRadius(radius: number) {
   }
 }
 
+function parsePx(value: string | undefined, fallback: number) {
+  if (!value) return fallback
+  const match = value.trim().match(/^(-?\d*\.?\d+)px$/)
+  if (!match) return fallback
+  const parsed = Number(match[1])
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 function normalizeShadows(style: WebAppDNA['shadow_style']): GrainTheme['shadows'] {
   switch (style) {
     case 'elevated':
@@ -157,5 +165,58 @@ export function buildThemeFromWebDna(dna: WebAppDNA): GrainTheme {
     },
     radius: normalizeRadius(dna.border_radius),
     shadows: normalizeShadows(dna.shadow_style),
+  }
+}
+
+export function buildThemeFromDesignMd(dna: DesignMD): GrainTheme {
+  const colors = dna.tokens.colors
+  const bg = colors.surface ?? colors.neutral ?? colors.background ?? defaultTheme.colors.bg
+  const text = ensureContrast(
+    colors['on-surface'] ?? colors['on-background'] ?? defaultTheme.colors.text,
+    bg,
+    defaultTheme.colors.text,
+    7
+  )
+  const accent = ensureContrast(
+    colors.primary ?? colors.accent ?? defaultTheme.colors.accent,
+    bg,
+    defaultTheme.colors.accent,
+    2.2
+  )
+
+  const surfaceCandidate = colors['surface-container'] ?? colors['surface-container-low'] ?? mix(bg, '#ffffff', 0.22)
+  const surface = contrastRatio(bg, surfaceCandidate) >= 1.08 ? surfaceCandidate : mix(bg, text, 0.04)
+  const muted = ensureContrast(
+    colors.muted ?? colors.secondary ?? mix(text, bg, 0.58),
+    bg,
+    defaultTheme.colors.muted,
+    2.6
+  )
+  const border = colors.outline ?? colors.border ?? mix(text, bg, 0.82)
+
+  const bodyFont = dna.tokens.typography['body-md'] ?? dna.tokens.typography['body-lg']
+  const displayFont = dna.tokens.typography['headline-display'] ?? dna.tokens.typography['headline-lg'] ?? bodyFont
+  const bodyFamily = bodyFont?.fontFamily ?? defaultTheme.typography.fontFamily
+  const displayFamily = displayFont?.fontFamily ?? bodyFamily
+
+  return {
+    colors: {
+      bg,
+      surface,
+      accent,
+      text,
+      muted,
+      border,
+    },
+    typography: {
+      fontFamily: bodyFamily,
+      displayFontFamily: displayFamily,
+      fontUrl: buildGoogleFontUrl([
+        { family: bodyFamily, weights: [bodyFont?.fontWeight ?? 400] },
+        { family: displayFamily, weights: [displayFont?.fontWeight ?? 700] },
+      ]),
+    },
+    radius: normalizeRadius(parsePx(dna.tokens.rounded.md, 8)),
+    shadows: defaultTheme.shadows,
   }
 }

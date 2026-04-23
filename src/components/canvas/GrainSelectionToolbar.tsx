@@ -24,13 +24,14 @@ import { groupShapesIntoBoard, isManuallyGroupableShape } from '@/lib/board-grou
 interface GrainSelectionToolbarProps {
   canvasId: string
   onAskAI: () => void
+  getAuthHeaders?: () => Promise<Record<string, string> | null>
 }
 
 /**
  * Contextual toolbar for non-image, non-video selections.
  * Renders directly inside CanvasUI (no TLComponents slot needed).
  */
-export function GrainSelectionToolbar({ canvasId, onAskAI }: GrainSelectionToolbarProps) {
+export function GrainSelectionToolbar({ canvasId, onAskAI, getAuthHeaders }: GrainSelectionToolbarProps) {
   const editor = useEditor()
 
   // Only show when we have a selection that's NOT a single image/video
@@ -72,7 +73,11 @@ export function GrainSelectionToolbar({ canvasId, onAskAI }: GrainSelectionToolb
       getSelectionBounds={getSelectionBounds}
       label="Selection toolbar"
     >
-      <GrainSelectionToolbarContent canvasId={canvasId} onAskAI={onAskAI} />
+      <GrainSelectionToolbarContent
+        canvasId={canvasId}
+        onAskAI={onAskAI}
+        getAuthHeaders={getAuthHeaders}
+      />
     </TldrawUiContextualToolbar>
   )
 }
@@ -80,9 +85,11 @@ export function GrainSelectionToolbar({ canvasId, onAskAI }: GrainSelectionToolb
 function GrainSelectionToolbarContent({
   canvasId,
   onAskAI,
+  getAuthHeaders,
 }: {
   canvasId: string
   onAskAI: () => void
+  getAuthHeaders?: () => Promise<Record<string, string> | null>
 }) {
   const editor = useEditor()
   const actions = useActions()
@@ -148,7 +155,14 @@ function GrainSelectionToolbarContent({
     if (!canGroupSelection) return
 
     try {
-      const result = await groupShapesIntoBoard(editor, canvasId, selectedGroupableArtifacts)
+      const authHeaders = getAuthHeaders ? await getAuthHeaders() : null
+      const result = await groupShapesIntoBoard(
+        editor,
+        canvasId,
+        selectedGroupableArtifacts,
+        'Untitled Board',
+        authHeaders
+      )
       if (!result) return
 
       addToast({
@@ -163,7 +177,7 @@ function GrainSelectionToolbarContent({
         severity: 'error',
       })
     }
-  }, [addToast, canGroupSelection, canvasId, editor, selectedGroupableArtifacts])
+  }, [addToast, canGroupSelection, canvasId, editor, getAuthHeaders, selectedGroupableArtifacts])
 
   return (
     <>

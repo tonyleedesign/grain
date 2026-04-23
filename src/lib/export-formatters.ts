@@ -2,10 +2,329 @@
 // Based on research: Anthropic's frontend-design skill structure, typeui.sh patterns,
 // and anti-slop techniques. The export is a behavioral contract, not just tokens.
 
-import type { WebAppDNA, ImageGenDNA, Medium } from '@/types/dna'
+import type { WebAppDNA, ImageGenDNA, Medium, DesignMD } from '@/types/dna'
 import { generateShadcnTheme } from './theme-generator'
 
 // --- Formatters ---
+
+export interface ExportImage {
+  url: string
+  index: number
+  sourceIndex?: number
+}
+
+function quoteYaml(value: string) {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+function firstSentence(value?: string) {
+  if (!value) return ''
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  const match = normalized.match(/^.*?[.!?](?:\s|$)/)
+  return (match ? match[0] : normalized).trim()
+}
+
+function formatExpandedDesignBrief(dna: DesignMD, useCase?: string) {
+  const seed = useCase?.trim()
+  const thesis = firstSentence(dna.overview)
+  const direction = firstSentence(dna.creativeDirection)
+  const buildTarget = seed || 'a focused digital experience'
+
+  const lines: string[] = []
+  if (seed) {
+    lines.push(`User seed: ${seed}`)
+    lines.push('')
+  }
+
+  lines.push(`Build ${buildTarget} as a complete, usable product shaped by the "${dna.name}" design system.`)
+  if (thesis) lines.push(thesis)
+  if (direction && direction !== thesis) lines.push(direction)
+  lines.push('')
+  lines.push('Use the user seed as intent, not as final copy. Expand sparse or informal input into a concrete product structure, content model, and interaction flow that fit the reference-derived visual direction.')
+
+  return lines.join('\n')
+}
+
+function hasUsefulComponents(dna: DesignMD) {
+  const components = dna.tokens.components
+  if (!components) return false
+
+  return Object.values(components).some((component) =>
+    Object.values(component).some((value) => typeof value === 'string' && value.trim().length > 0)
+  )
+}
+
+function formatDesignDirection(dna: DesignMD) {
+  const parts = [
+    firstSentence(dna.overview),
+    firstSentence(dna.creativeDirection),
+  ].filter(Boolean)
+
+  if (parts.length === 0) return ''
+
+  return parts.join(' ')
+}
+
+export function formatDesignMd(dna: DesignMD, _images?: ExportImage[]): string {
+  void _images
+  const lines: string[] = []
+  const includeComponents = hasUsefulComponents(dna)
+
+  lines.push('---')
+  lines.push('schema: grain-design-md')
+  lines.push('schemaVersion: 1')
+  lines.push(`name: ${quoteYaml(dna.name || 'Grain Design System')}`)
+
+  lines.push('colors:')
+  for (const [name, hex] of Object.entries(dna.tokens.colors)) {
+    lines.push(`  ${name}: ${quoteYaml(hex)}`)
+  }
+
+  lines.push('typography:')
+  for (const [level, token] of Object.entries(dna.tokens.typography)) {
+    if (!token) continue
+    lines.push(`  ${level}:`)
+    lines.push(`    fontFamily: ${quoteYaml(token.fontFamily)}`)
+    lines.push(`    fontSize: ${quoteYaml(token.fontSize)}`)
+    lines.push(`    fontWeight: ${token.fontWeight}`)
+    if (token.lineHeight) lines.push(`    lineHeight: ${quoteYaml(token.lineHeight)}`)
+    if (token.letterSpacing) lines.push(`    letterSpacing: ${quoteYaml(token.letterSpacing)}`)
+  }
+
+  lines.push('rounded:')
+  for (const [scale, value] of Object.entries(dna.tokens.rounded)) {
+    if (value) lines.push(`  ${scale}: ${quoteYaml(value)}`)
+  }
+
+  lines.push('spacing:')
+  for (const [scale, value] of Object.entries(dna.tokens.spacing)) {
+    if (value) lines.push(`  ${scale}: ${quoteYaml(value)}`)
+  }
+
+  if (includeComponents && dna.tokens.components) {
+    lines.push('components:')
+    for (const [name, token] of Object.entries(dna.tokens.components)) {
+      const entries = Object.entries(token).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].trim().length > 0
+      )
+      if (entries.length === 0) continue
+      lines.push(`  ${name}:`)
+      for (const [prop, value] of entries) {
+        lines.push(`    ${prop}: ${quoteYaml(value)}`)
+      }
+    }
+  }
+
+  lines.push('---')
+  lines.push('')
+
+  lines.push('## Overview')
+  lines.push('')
+  lines.push(dna.overview)
+  lines.push('')
+
+  lines.push('## Colors')
+  lines.push('')
+  lines.push(dna.colors)
+  lines.push('')
+
+  lines.push('## Typography')
+  lines.push('')
+  lines.push(dna.typography)
+  lines.push('')
+
+  lines.push('## Layout & Spacing')
+  lines.push('')
+  lines.push(dna.layoutSpacing)
+  lines.push('')
+
+  lines.push('## Elevation & Depth')
+  lines.push('')
+  lines.push(dna.elevationDepth)
+  lines.push('')
+
+  lines.push('## Shapes')
+  lines.push('')
+  lines.push(dna.shapes)
+  lines.push('')
+
+  if (includeComponents && dna.components.trim()) {
+    lines.push('## Components')
+    lines.push('')
+    lines.push(dna.components)
+    lines.push('')
+  }
+
+  lines.push("## Do's and Don'ts")
+  lines.push('')
+  lines.push(dna.dosAndDonts)
+  lines.push('')
+
+  lines.push('## Creative Direction')
+  lines.push('')
+  lines.push(dna.creativeDirection)
+  lines.push('')
+
+  lines.push('## Motion')
+  lines.push('')
+  lines.push(dna.motion)
+  lines.push('')
+
+  return lines.join('\n')
+}
+
+export function formatDesignPackageReadme(
+  dna: DesignMD,
+  useCase?: string,
+  images?: ExportImage[]
+): string {
+  const lines: string[] = []
+
+  lines.push(`# ${dna.name}`)
+  lines.push('')
+
+  lines.push('## Project Brief')
+  lines.push('')
+  lines.push(formatExpandedDesignBrief(dna, useCase))
+  lines.push('')
+
+  const designDirection = formatDesignDirection(dna)
+  if (designDirection) {
+    lines.push('## Design Direction')
+    lines.push('')
+    lines.push(designDirection)
+    lines.push('')
+  }
+
+  lines.push("## Do's and Don'ts")
+  lines.push('')
+  lines.push(dna.dosAndDonts)
+  lines.push('')
+
+  lines.push('## Files')
+  lines.push('')
+  lines.push('| File | Description |')
+  lines.push('|------|-------------|')
+  lines.push('| `README.md` | Project brief, direction rules, and file guide |')
+  lines.push('| `DESIGN.md` | Complete design system -- YAML tokens + prose rationale |')
+  lines.push('| `ASSETS.md` | Reference image usage instructions |')
+  lines.push('| `design_tokens.json` | DTCG-format tokens for Figma, Style Dictionary, and token pipelines |')
+
+  if (images && images.length > 0) {
+    for (const image of images) {
+      const ext = getImageExtension(image.url)
+      lines.push(`| \`asset-${image.index + 1}.${ext}\` | Reference image ${image.index + 1} |`)
+    }
+  }
+
+  lines.push('')
+  lines.push('## Priority')
+  lines.push('')
+  lines.push('`README.md` defines product intent. `DESIGN.md` defines the visual system. `ASSETS.md` defines how to use reference images. `design_tokens.json` is a machine-readable version of the same tokens -- use it with Figma, Style Dictionary, or any token pipeline.')
+  lines.push('')
+
+  return lines.join('\n')
+}
+
+export function formatDesignAssets(
+  dna: DesignMD,
+  images: ExportImage[]
+): string {
+  const lines: string[] = []
+
+  lines.push(`# Assets: ${dna.name}`)
+  lines.push('')
+
+  if (images.length === 0) {
+    lines.push('No reference assets selected.')
+    lines.push('')
+    return lines.join('\n')
+  }
+
+  lines.push('> **Priority: EXACT** -- These are required reference assets. Incorporate them into the build as specified. Do not generate placeholder images when these references are provided.')
+  lines.push('')
+  lines.push('You MUST incorporate these references into the final build. Let them influence the overall design language, image treatment, and visual direction.')
+  lines.push('')
+
+  for (const image of images) {
+    const ext = getImageExtension(image.url)
+    const filename = `asset-${image.index + 1}.${ext}`
+    const evidence = dna.evidence?.find((item) => item.image_index === (image.sourceIndex ?? image.index))
+      ?? dna.evidence?.find((item) => item.image_index === image.index)
+    const quality = evidence?.quality?.trim()
+    const regionHint = evidence?.region_hint?.trim()
+    const conflict = evidence?.conflict?.trim()
+
+    lines.push(`### ${filename}`)
+    lines.push('**Role:** Style reference')
+    lines.push(`**Scope:** Global -- ${quality ? `anchors ${quality}` : 'influences overall visual direction'}`)
+    if (quality || regionHint) {
+      const focus = [quality, regionHint ? `visible around ${regionHint}` : ''].filter(Boolean).join(', ')
+      lines.push(`**Usage:** Preserve the ${focus}. Let this reference guide composition, crop behavior, image treatment, material feel, and visual restraint. Do not embed it literally unless it is a usable asset that fits the final design.`)
+    } else {
+      lines.push('**Usage:** Use this reference to preserve composition, image treatment, material feel, and visual direction. Do not embed it literally unless it is a usable asset that fits the final design.')
+    }
+    if (conflict) {
+      lines.push(`**Tension:** ${conflict}`)
+    }
+    lines.push(`![Reference ${image.index + 1}](${filename})`)
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+export function formatDesignTokensJson(dna: DesignMD): string {
+  const tokens: Record<string, unknown> = {}
+
+  const colors: Record<string, unknown> = {}
+  for (const [name, hex] of Object.entries(dna.tokens.colors)) {
+    colors[name] = { $type: 'color', $value: hex }
+  }
+  if (Object.keys(colors).length > 0) tokens.colors = colors
+
+  const typography: Record<string, unknown> = {}
+  for (const [level, token] of Object.entries(dna.tokens.typography)) {
+    if (!token) continue
+    typography[level] = {
+      $type: 'typography',
+      $value: {
+        fontFamily: token.fontFamily,
+        fontSize: token.fontSize,
+        fontWeight: token.fontWeight,
+        ...(token.lineHeight ? { lineHeight: token.lineHeight } : {}),
+        ...(token.letterSpacing ? { letterSpacing: token.letterSpacing } : {}),
+      },
+    }
+  }
+  if (Object.keys(typography).length > 0) tokens.typography = typography
+
+  const rounded: Record<string, unknown> = {}
+  for (const [scale, value] of Object.entries(dna.tokens.rounded)) {
+    if (value) rounded[scale] = { $type: 'dimension', $value: value }
+  }
+  tokens.rounded = rounded
+
+  const spacing: Record<string, unknown> = {}
+  for (const [scale, value] of Object.entries(dna.tokens.spacing)) {
+    if (value) spacing[scale] = { $type: 'dimension', $value: value }
+  }
+  tokens.spacing = spacing
+
+  if (dna.tokens.components && Object.keys(dna.tokens.components).length > 0) {
+    const components: Record<string, unknown> = {}
+    for (const [name, component] of Object.entries(dna.tokens.components)) {
+      const props: Record<string, unknown> = {}
+      for (const [prop, value] of Object.entries(component)) {
+        if (value) props[prop] = { $type: 'string', $value: value }
+      }
+      components[name] = props
+    }
+    tokens.components = components
+  }
+
+  return JSON.stringify(tokens, null, 2)
+}
 
 export function formatForCodeTools(
   dna: WebAppDNA | ImageGenDNA,
@@ -358,6 +677,12 @@ function formatImageGenSkill(dna: ImageGenDNA, useCase?: string): string {
   sections.push('')
   sections.push(`> ${dna.direction_summary}`)
   sections.push('')
+
+  if (useCase) {
+    sections.push(`## Intended Use`)
+    sections.push(useCase)
+    sections.push('')
+  }
 
   // Core parameters
   sections.push(`## Visual Identity`)

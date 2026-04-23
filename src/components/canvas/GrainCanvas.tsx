@@ -47,12 +47,17 @@ export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, acc
     canvasId,
     accessToken,
   })
+  const getAuthHeaders = useCallback(async () => {
+    if (!accessToken) return null
+    return { Authorization: `Bearer ${accessToken}` }
+  }, [accessToken])
 
   const components = useMemo<TLComponents>(
     () => ({
       ImageToolbar: createGrainImageToolbar(
         () => callbacksRef.current.onAskAI?.(),
-        canvasId
+        canvasId,
+        getAuthHeaders
       ),
       ContextMenu: createGrainContextMenu(
         (anchor?: { x: number; y: number }) => callbacksRef.current.onAskAI?.(anchor)
@@ -62,7 +67,7 @@ export function GrainCanvas({ canvasType: _canvasType, canvasId, uploadedBy, acc
       PageMenu: GrainPageMenu,
       Toolbar: createGrainToolbar(canvasId, callbacksRef),
     }),
-    [canvasId]
+    [canvasId, getAuthHeaders]
   )
 
   // Custom asset store — routes image uploads through Grain's pipeline
